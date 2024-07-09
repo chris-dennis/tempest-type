@@ -1,0 +1,146 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+#typewriter {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 4em;
+  font-weight: bold;
+  color: #00bfff;
+  text-shadow: #000000 3px 2px;
+  white-space: nowrap;
+  overflow: hidden;
+
+}
+
+
+.stats {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+#nickname, #party-code{
+  font-size: 14px;
+  width: 128px;
+  border: none;
+  padding: 5px;
+  border-radius: 5px;
+}
+.stats p {
+  padding: 2px;
+}
+
+ul {
+  list-style: none;
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 425px;
+}
+
+#input-box {
+  background: lightgrey;
+  color: black;
+  font-size: 18px;
+  width: inherit;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  border: none;
+  border-radius: 5px;
+  padding: 5px;
+}
+
+.prompt-box {
+  width: 450px;
+}
+
+.prompt {
+  text-align: start;
+  font-size: 20px;
+  min-height: 150px;
+}
+
+#countdown {
+  min-height: 50px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+#leaderboard {
+  list-style: decimal;
+  display:flex;
+  align-items: center;
+}
+
+#leaderboard li{
+  margin-right: 45px;
+}
+
+#leaderboard h3{
+  margin-right: 25px;
+}
+
+.party {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.party-members-container {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.party-member {
+  background-color: #f0f0f0;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  padding: 5px 20px;
+  height: 30px;
+  color: white;
+}
+
+
+.leaderboard-container {
+  min-height: 150px;
+}
+
+#party-code{
+  margin-left: 10px;
+  margin-right: 10px;
+  font-size: 14px;
+}
+
+.footer {
+  padding: 20px;
+  text-align: center;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  color: #bababa; /* Color of the text in the footer */
+}
+
+.footer-info {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.footer-info p,
+.footer-info a {
+  margin: 0 10px;
+  color: #bababa;
+  text-decoration: none;
+}
