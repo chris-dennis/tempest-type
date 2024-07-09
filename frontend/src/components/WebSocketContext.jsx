@@ -34,7 +34,7 @@ const WebSocketProvider = ({ children }) => {
         }
 
         setUser(storedUser);
-        const socket = new WebSocket('ws://127.0.0.1:8080/ws');
+            const socket = new WebSocket('ws://13.59.42.81:8080/ws');
 
         socket.onopen = () => {
             console.log('WebSocket connection opened');

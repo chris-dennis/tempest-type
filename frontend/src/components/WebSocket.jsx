@@ -22,25 +22,12 @@ function WebSocket() {
         return `#${Math.floor(Math.random() * 16777215).toString(16)}`;
     };
 
-    const calculateLuminance = (color) => {
-        const r = parseInt(color.slice(1, 3), 16);
-        const g = parseInt(color.slice(3, 5), 16);
-        const b = parseInt(color.slice(5, 7), 16);
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    };
-
-    const isColorTooLight = (color) => {
-        const luminance = calculateLuminance(color);
-        return luminance > 200;
-    };
-
     const assignColorsToMembers = (members) => {
         const newColors = { ...colorsRef.current };
         members.forEach(member => {
             if (!newColors[member.id]) {
                 const color = generateRandomColor();
-                const textColor = isColorTooLight(color) ? 'black' : 'white';
-                newColors[member.id] = { backgroundColor: color, textColor: textColor };
+                newColors[member.id] = { backgroundColor: color};
             }
         });
         colorsRef.current = newColors;

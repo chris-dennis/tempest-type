@@ -171,7 +171,7 @@ function RaceBox() {
 
     return (
         <>
-            <a href=""><div className="typewriter" id="typewriter"></div></a>
+            <a href="/"><div className="typewriter" id="typewriter"></div></a>
             {isConnected ? (
                 <div className="top">
                     {stats && (
