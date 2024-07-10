@@ -13,6 +13,10 @@ RUN cargo build --release
 # Use a minimal base image to reduce the size of the final image
 FROM debian:latest
 
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy the built binary from the builder stage
 COPY --from=builder /usr/src/app/target/release/backend /usr/local/bin/backend
 
