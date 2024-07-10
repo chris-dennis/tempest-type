@@ -2,6 +2,7 @@ mod user;
 mod party;
 mod quotes;
 
+use std::env;
 use std::path::Path;
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 
@@ -291,6 +292,8 @@ async fn main() -> std::io::Result<()> {
     let privkey_path = "/etc/letsencrypt/live/tempesttype.xyz/privkey.pem";
     let fullchain_path = "/etc/letsencrypt/live/tempesttype.xyz/fullchain.pem";
 
+    env::set_var("RUST_BACKTRACE", "1");
+
     if !Path::new(privkey_path).exists() {
         panic!("Private key file not found at {}", privkey_path);
     }
@@ -318,8 +321,8 @@ async fn main() -> std::io::Result<()> {
             .service(get_or_create_user)
 
     })
-        .bind(("0.0.0.0", 8080))?
-        // .bind_openssl("0.0.0.0:8080", builder)?
+        // .bind(("0.0.0.0", 8080))?
+        .bind_openssl("0.0.0.0:8080", builder)?
         .run()
         .await
 }
