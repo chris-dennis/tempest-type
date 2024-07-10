@@ -2,6 +2,7 @@ mod user;
 mod party;
 mod quotes;
 
+use std::path::Path;
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, get};
@@ -286,6 +287,16 @@ async fn get_or_create_user(req: HttpRequest) -> Result<HttpResponse, Error> {
 async fn main() -> std::io::Result<()> {
     println!("starting HTTP server");
     let party_manager = PartyManager.start();
+
+    let privkey_path = "/etc/letsencrypt/privkey.pem";
+    let fullchain_path = "/etc/letsencrypt/fullchain.pem";
+
+    if !Path::new(privkey_path).exists() {
+        panic!("Private key file not found at {}", privkey_path);
+    }
+    if !Path::new(fullchain_path).exists() {
+        panic!("Certificate chain file not found at {}", fullchain_path);
+    }
 
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
     builder.set_private_key_file("/etc/letsencrypt/privkey.pem", SslFiletype::PEM)
