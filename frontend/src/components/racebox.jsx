@@ -204,6 +204,7 @@ function RaceBox() {
                             id="input-box"
                             disabled={!raceStarted || countdown > 0 || raceFinished}
                             placeholder="Type here (auto-focus when countdown ends)"
+                            autoComplete="off"
                             onPaste={(e) => {
                                 e.preventDefault();
                                 return false;
@@ -212,6 +213,7 @@ function RaceBox() {
                                 e.preventDefault();
                                 return false;
                             }}
+
                         />
                     </div>
                     {raceFinished && <p>WPM: {currentWPM}</p>}
