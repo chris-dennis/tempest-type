@@ -3,6 +3,8 @@ mod party;
 mod quotes;
 
 use std::env;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 
@@ -13,7 +15,6 @@ use actix_cors::Cors;
 use std::time::{Duration, Instant};
 use serde::{Deserialize};
 use ws::Message;
-use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
 use crate::user::User;
 use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace};
@@ -292,7 +293,7 @@ async fn main() -> std::io::Result<()> {
     let privkey_path = "/etc/letsencrypt/live/tempesttype.xyz/privkey.pem";
     let fullchain_path = "/etc/letsencrypt/live/tempesttype.xyz/fullchain.pem";
 
-    env::set_var("RUST_BACKTRACE", "1");
+    env::set_var("RUST_BACKTRACE", "full");
 
     if !Path::new(privkey_path).exists() {
         panic!("Private key file not found at {}", privkey_path);
@@ -301,12 +302,21 @@ async fn main() -> std::io::Result<()> {
         panic!("Certificate chain file not found at {}", fullchain_path);
     }
 
-    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-    builder.set_private_key_file("/etc/letsencrypt/privkey.pem", SslFiletype::PEM)
-        .expect("Failed to set private key file");
-    builder.set_certificate_chain_file("/etc/letsencrypt/fullchain.pem")
-        .expect("Failed to set certificate chain file");
+    let mut certs_file = BufReader::new(File::open(fullchain_path).unwrap());
+    let mut key_file = BufReader::new(File::open(privkey_path).unwrap());
 
+    let tls_certs = rustls_pemfile::certs(&mut certs_file)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let tls_key = rustls_pemfile::pkcs8_private_keys(&mut key_file)
+        .next()
+        .unwrap()
+        .unwrap();
+
+    let tls_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(tls_certs, rustls::pki_types::PrivateKeyDer::Pkcs8(tls_key))
+        .unwrap();
 
     HttpServer::new(move || {
         let cors = Cors::default()
@@ -322,7 +332,7 @@ async fn main() -> std::io::Result<()> {
 
     })
         // .bind(("0.0.0.0", 8080))?
-        .bind_openssl("0.0.0.0:8080", builder)?
+        .bind_rustls_0_23(("0.0.0.0", 8080), tls_config)?
         .run()
         .await
 }
