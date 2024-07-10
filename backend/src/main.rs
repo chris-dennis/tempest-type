@@ -3,12 +3,16 @@ mod party;
 mod quotes;
 
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
+
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, get};
 use actix_web_actors::ws;
+
 use actix_cors::Cors;
 use std::time::{Duration, Instant};
 use serde::{Deserialize};
 use ws::Message;
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
+
 use crate::user::User;
 use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace};
 
@@ -283,6 +287,11 @@ async fn main() -> std::io::Result<()> {
     println!("starting HTTP server");
     let party_manager = PartyManager.start();
 
+    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+    builder.set_private_key_file("/etc/letsencrypt//privkey.pem", SslFiletype::PEM).unwrap();
+    builder.set_certificate_chain_file("/etc/letsencrypt/fullchain.pem").unwrap();
+
+
     HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
@@ -294,8 +303,9 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(AppState { party_manager: party_manager.clone() }))
             .route("/ws", web::get().to(ws_index))
             .service(get_or_create_user)
+
     })
-        .bind(("0.0.0.0", 8080))?
+        .bind_openssl("0.0.0.0:8080", builder)?
         .run()
         .await
 }
