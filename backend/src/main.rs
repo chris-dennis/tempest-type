@@ -288,8 +288,8 @@ async fn main() -> std::io::Result<()> {
     println!("starting HTTP server");
     let party_manager = PartyManager.start();
 
-    let privkey_path = "/etc/letsencrypt/privkey.pem";
-    let fullchain_path = "/etc/letsencrypt/fullchain.pem";
+    let privkey_path = "/etc/letsencrypt/live/tempesttype.xyz/privkey.pem";
+    let fullchain_path = "/etc/letsencrypt/live/tempesttype.xyz/fullchain.pem";
 
     if !Path::new(privkey_path).exists() {
         panic!("Private key file not found at {}", privkey_path);
