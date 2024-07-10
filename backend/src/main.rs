@@ -287,11 +287,11 @@ async fn main() -> std::io::Result<()> {
     println!("starting HTTP server");
     let party_manager = PartyManager.start();
 
-    // let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-    // builder.set_private_key_file("/etc/letsencrypt/privkey.pem", SslFiletype::PEM)
-    //     .expect("Failed to set private key file");
-    // builder.set_certificate_chain_file("/etc/letsencrypt/fullchain.pem")
-    //     .expect("Failed to set certificate chain file");
+    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+    builder.set_private_key_file("/etc/letsencrypt/privkey.pem", SslFiletype::PEM)
+        .expect("Failed to set private key file");
+    builder.set_certificate_chain_file("/etc/letsencrypt/fullchain.pem")
+        .expect("Failed to set certificate chain file");
 
 
     HttpServer::new(move || {
