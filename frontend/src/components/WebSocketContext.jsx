@@ -34,7 +34,8 @@ const WebSocketProvider = ({ children }) => {
         }
 
         setUser(storedUser);
-            const socket = new WebSocket('wss://backend.tempesttype.xyz:8080/ws');
+        // const socket = new WebSocket('wss://backend.tempesttype.xyz:8080/ws'); // 'prod'
+        const socket = new WebSocket('ws://localhost:8080/ws'); // local
 
         socket.onopen = () => {
             console.log('WebSocket connection opened');

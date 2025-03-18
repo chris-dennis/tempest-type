@@ -1,11 +1,12 @@
 mod user;
 mod party;
 mod quotes;
+mod database;
 
-use std::env;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
+// use std::env;
+// use std::fs::File;
+// use std::io::BufReader;
+// use std::path::Path;
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, StreamHandler};
 
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, get};
@@ -18,12 +19,14 @@ use ws::Message;
 
 use crate::user::User;
 use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace};
+use crate::database::DbPool;
 
 struct MyWebSocket {
     hb: Instant,
     user: Option<User>,
     party_manager: Addr<PartyManager>,
     party_code: Option<String>,
+    db_pool: web::Data<DbPool>,
 }
 
 #[derive(Deserialize)]
@@ -39,6 +42,7 @@ struct UpdateNickname{
 
 struct AppState {
     party_manager: Addr<PartyManager>,
+    db_pool: DbPool,
 }
 
 impl Actor for MyWebSocket {
@@ -67,7 +71,6 @@ impl Handler<PartyUpdate> for MyWebSocket {
 
 impl Handler<StartRace> for MyWebSocket {
     type Result = ();
-
 
     fn handle(&mut self, msg: StartRace, ctx: &mut Self::Context) {
         let start = serde_json::json!({
@@ -123,9 +126,8 @@ impl Handler<LeaderboardUpdate> for MyWebSocket {
     }
 }
 
-
-impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
-    fn handle(&mut self, msg: Result<Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
             Ok(Message::Text(text)) => {
                 let message: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
@@ -134,24 +136,48 @@ impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
                     Some("auth") => {
                         if let Ok(auth_message) = serde_json::from_value::<AuthMessage>(message) {
                             let user = auth_message.user;
-                            user.store();
-                            self.user = Some(user);
-                            println!("User authenticated: {:?}", self.user);
+                            let db_pool = self.db_pool.clone();
+                            let ctx_addr = ctx.address();
+
+                            // Spawn task to store user in database
+                            actix::spawn(async move {
+                                if let Err(e) = user.store(&db_pool).await {
+                                    println!("Error storing user: {:?}", e);
+                                    return;
+                                }
+
+                                // Try to get the user with full info from DB
+                                match User::get_by_id(user.id, &db_pool).await {
+                                    Ok(db_user) => {
+                                        // Send user back to websocket
+                                        ctx_addr.do_send(UserAuthenticated { user: db_user });
+                                    },
+                                    Err(e) => {
+                                        println!("Error retrieving user from DB: {:?}", e);
+                                    }
+                                }
+                            });
                         }
                     },
-                    Some("updateNickname") =>{
+                    Some("updateNickname") => {
                         println!("Update nickname request");
                         if let Ok(update_message) = serde_json::from_value::<UpdateNickname>(message) {
                             let user = update_message.user;
                             let new_nickname = update_message.nickname;
+                            let db_pool = self.db_pool.clone();
+                            let ctx_addr = ctx.address();
 
-                            if let Ok(updated_user) = User::update_nickname(user, new_nickname) {
-                                self.user = Some(updated_user);
-                                println!("User nickname updated: {:?}", self.user);
-                            } else {
-                                println!("Error updating user nickname");
-                            }
-                        } else{
+                            actix::spawn(async move {
+                                match User::update_nickname(user, new_nickname, &db_pool).await {
+                                    Ok(updated_user) => {
+                                        ctx_addr.do_send(UserAuthenticated { user: updated_user });
+                                    },
+                                    Err(e) => {
+                                        println!("Error updating nickname: {:?}", e);
+                                    }
+                                }
+                            });
+                        } else {
                             println!("Nickname update failed");
                         }
                     },
@@ -161,6 +187,7 @@ impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
                             self.party_manager.do_send(CreateParty {
                                 leader: user.id,
                                 socket: ctx.address(),
+                                db_pool: self.db_pool.clone(),
                             });
                         }
                     },
@@ -172,6 +199,7 @@ impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
                                     user_id: user.id,
                                     code: code.to_string(),
                                     socket: ctx.address(),
+                                    db_pool: self.db_pool.clone(),
                                 });
                                 self.party_code = Some(code.to_string());
                             }
@@ -184,6 +212,7 @@ impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
                                 self.party_manager.do_send(StartRace {
                                     code: party_code.clone(),
                                     prompt: "".to_string(),
+                                    db_pool: Some(self.db_pool.clone()),
                                 });
                             }
                         }
@@ -198,6 +227,7 @@ impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
                                         user_id: user.id,
                                         finish_time: finish_time_ms,
                                         code: party_code.clone(),
+                                        db_pool: self.db_pool.clone(),
                                     });
                                     println!("Sent race leaderboard update")
                                 } else {
@@ -212,6 +242,7 @@ impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
                             if let Some(party_code) = &self.party_code {
                                 self.party_manager.do_send(ResetRace {
                                     code: party_code.clone(),
+                                    db_pool: Some(self.db_pool.clone()),
                                 });
                             }
                         }
@@ -226,6 +257,7 @@ impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
                         self.party_manager.do_send(LeaveParty {
                             user_id: user.id,
                             code: party_code.clone(),
+                            db_pool: self.db_pool.clone(),
                         });
                     }
                 }
@@ -250,10 +282,33 @@ impl StreamHandler<Result<Message, ws::ProtocolError>> for MyWebSocket {
     }
 }
 
+// New message for handling authenticated user
+#[derive(actix::Message)]
+#[rtype(result = "()")]
+struct UserAuthenticated {
+    user: User,
+}
+
+impl Handler<UserAuthenticated> for MyWebSocket {
+    type Result = ();
+
+    fn handle(&mut self, msg: UserAuthenticated, _ctx: &mut Self::Context) -> Self::Result {
+        self.user = Some(msg.user);
+        println!("User authenticated: {:?}", self.user);
+    }
+}
+
 async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    let ws = MyWebSocket { hb: Instant::now(), user: None, party_manager: data.party_manager.clone(), party_code: None };
+    let ws = MyWebSocket {
+        hb: Instant::now(),
+        user: None,
+        party_manager: data.party_manager.clone(),
+        party_code: None,
+        db_pool: web::Data::new(data.db_pool.clone()),
+    };
     println!("Websocket connection established");
-    ws::start(ws, &req, stream)
+    let resp = ws::start(ws, &req, stream)?;
+    Ok(resp)
 }
 
 impl MyWebSocket {
@@ -270,14 +325,40 @@ impl MyWebSocket {
 }
 
 #[get("/api/users")]
-async fn get_or_create_user(req: HttpRequest) -> Result<HttpResponse, Error> {
+async fn get_or_create_user(req: HttpRequest, db_pool: web::Data<DbPool>) -> Result<HttpResponse, Error> {
     match req.cookie("user_id") {
         Some(cookie) => {
-            let user = User::from_cookie(cookie.value()).unwrap_or_else(User::new);
-            Ok(HttpResponse::Ok().json(user))
+            if let Some(user) = User::from_cookie(cookie.value()) {
+                // Check if user exists in DB
+                match User::get_by_id(user.id, &db_pool).await {
+                    Ok(db_user) => {
+                        Ok(HttpResponse::Ok().json(db_user))
+                    },
+                    Err(_) => {
+                        // User not in DB, store it
+                        if let Err(e) = user.store(&db_pool).await {
+                            println!("Error storing user: {:?}", e);
+                        }
+                        Ok(HttpResponse::Ok().json(user))
+                    }
+                }
+            } else {
+                // Invalid cookie, create new user
+                let new_user = User::new();
+                if let Err(e) = new_user.store(&db_pool).await {
+                    println!("Error storing new user: {:?}", e);
+                }
+                Ok(HttpResponse::Ok()
+                    .cookie(new_user.to_cookie())
+                    .json(new_user))
+            }
         },
         None => {
+            // No cookie, create new user
             let new_user = User::new();
+            if let Err(e) = new_user.store(&db_pool).await {
+                println!("Error storing new user: {:?}", e);
+            }
             Ok(HttpResponse::Ok()
                 .cookie(new_user.to_cookie())
                 .json(new_user))
@@ -288,35 +369,41 @@ async fn get_or_create_user(req: HttpRequest) -> Result<HttpResponse, Error> {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     println!("starting HTTP server");
-    let party_manager = PartyManager.start();
 
-    let privkey_path = "/etc/letsencrypt/live/tempesttype.xyz/privkey.pem";
-    let fullchain_path = "/etc/letsencrypt/live/tempesttype.xyz/fullchain.pem";
+    // Initialize database connection
+    let db_pool = database::initialize_pool()
+        .await
+        .expect("Failed to create database pool");
 
-    env::set_var("RUST_BACKTRACE", "full");
+    let party_manager = PartyManager::new(web::Data::new(db_pool.clone())).start();
 
-    if !Path::new(privkey_path).exists() {
-        panic!("Private key file not found at {}", privkey_path);
-    }
-    if !Path::new(fullchain_path).exists() {
-        panic!("Certificate chain file not found at {}", fullchain_path);
-    }
-
-    let mut certs_file = BufReader::new(File::open(fullchain_path).unwrap());
-    let mut key_file = BufReader::new(File::open(privkey_path).unwrap());
-
-    let tls_certs = rustls_pemfile::certs(&mut certs_file)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    let tls_key = rustls_pemfile::pkcs8_private_keys(&mut key_file)
-        .next()
-        .unwrap()
-        .unwrap();
-
-    let tls_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(tls_certs, rustls::pki_types::PrivateKeyDer::Pkcs8(tls_key))
-        .unwrap();
+    // let privkey_path = "/etc/letsencrypt/live/tempesttype.xyz/privkey.pem";
+    // let fullchain_path = "/etc/letsencrypt/live/tempesttype.xyz/fullchain.pem";
+    //
+    // env::set_var("RUST_BACKTRACE", "full");
+    //
+    // if !Path::new(privkey_path).exists() {
+    //     panic!("Private key file not found at {}", privkey_path);
+    // }
+    // if !Path::new(fullchain_path).exists() {
+    //     panic!("Certificate chain file not found at {}", fullchain_path);
+    // }
+    //
+    // let mut certs_file = BufReader::new(File::open(fullchain_path).unwrap());
+    // let mut key_file = BufReader::new(File::open(privkey_path).unwrap());
+    //
+    // let tls_certs = rustls_pemfile::certs(&mut certs_file)
+    //     .collect::<Result<Vec<_>, _>>()
+    //     .unwrap();
+    // let tls_key = rustls_pemfile::pkcs8_private_keys(&mut key_file)
+    //     .next()
+    //     .unwrap()
+    //     .unwrap();
+    //
+    // let tls_config = rustls::ServerConfig::builder()
+    //     .with_no_client_auth()
+    //     .with_single_cert(tls_certs, rustls::pki_types::PrivateKeyDer::Pkcs8(tls_key))
+    //     .unwrap();
 
     HttpServer::new(move || {
         let cors = Cors::default()
@@ -326,13 +413,17 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .wrap(cors)
-            .app_data(web::Data::new(AppState { party_manager: party_manager.clone() }))
+            .app_data(web::Data::new(AppState {
+                party_manager: party_manager.clone(),
+                db_pool: db_pool.clone(),
+            }))
+            .app_data(web::Data::new(db_pool.clone()))
             .route("/ws", web::get().to(ws_index))
             .service(get_or_create_user)
 
     })
-        // .bind(("0.0.0.0", 8080))?
-        .bind_rustls_0_23(("0.0.0.0", 8080), tls_config)?
+        .bind(("0.0.0.0", 8080))?
+        // .bind_rustls_0_23(("0.0.0.0", 8080), tls_config)?
         .run()
         .await
 }

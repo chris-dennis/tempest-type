@@ -18,3 +18,6 @@ rand = "0.8.5"
 openssl = "0.10.64"
 rustls-pemfile = "2.1.2"
 rustls = "0.23.10"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+tokio = { version = "1", features = ["full"] }
+dotenv = "0.15"
