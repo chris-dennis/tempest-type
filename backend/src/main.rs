@@ -14,6 +14,7 @@ use actix_web_actors::ws;
 
 use actix_cors::Cors;
 use std::time::{Duration, Instant};
+use dotenv::dotenv;
 use serde::{Deserialize};
 use ws::Message;
 
@@ -376,9 +377,10 @@ async fn main() -> std::io::Result<()> {
         .expect("Failed to create database pool");
 
     let party_manager = PartyManager::new(web::Data::new(db_pool.clone())).start();
+    // dotenv().ok();
 
-    // let privkey_path = "/etc/letsencrypt/live/tempesttype.xyz/privkey.pem";
-    // let fullchain_path = "/etc/letsencrypt/live/tempesttype.xyz/fullchain.pem";
+    // let privkey_path = env::var("PRIVKEY_PATH") .expect("PRIVKEY_PATH must be set");
+    // let fullchain_path = env::var("PEMKEY_PATH").expect("PEMKEY_PATH must be set");
     //
     // env::set_var("RUST_BACKTRACE", "full");
     //
