@@ -11,7 +11,7 @@ pub async fn initialize_pool() -> Result<DbPool, sqlx::Error> {
         .expect("DATABASE_URL must be set");
 
     PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(50)
         .connect(&database_url)
         .await
 }

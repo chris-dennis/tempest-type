@@ -15,11 +15,12 @@ use actix_web_actors::ws;
 use actix_cors::Cors;
 use std::time::{Duration, Instant};
 use dotenv::dotenv;
+use rand::prelude::SliceRandom;
 use serde::{Deserialize};
 use ws::Message;
 
 use crate::user::User;
-use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace};
+use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace, StatsUpdate};
 use crate::database::DbPool;
 
 struct MyWebSocket {
@@ -108,6 +109,19 @@ impl Handler<ResetRace> for MyWebSocket {
     }
 }
 
+impl Handler<StatsUpdate> for MyWebSocket {
+    type Result = ();
+
+    fn handle(&mut self, msg: StatsUpdate, ctx: &mut Self::Context) {
+        let update = serde_json::json!({
+            "type": "statsUpdate",
+            "user": msg.user
+        });
+
+        ctx.text(update.to_string());
+    }
+}
+
 impl Handler<LeaderboardUpdate> for MyWebSocket {
     type Result = ();
 
@@ -118,7 +132,7 @@ impl Handler<LeaderboardUpdate> for MyWebSocket {
             "leaderboard": msg.leaderboard.iter().map(|entry| {
                 serde_json::json!({
                     "user_id": entry.user,
-                    "finish_time": entry.finish_time,
+                    "wpm": entry.wpm,
                 })
             }).collect::<Vec<_>>(),
         });
@@ -140,7 +154,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                             let db_pool = self.db_pool.clone();
                             let ctx_addr = ctx.address();
 
-                            // Spawn task to store user in database
+                            // Task to store user in database
                             actix::spawn(async move {
                                 if let Err(e) = user.store(&db_pool).await {
                                     println!("Error storing user: {:?}", e);
@@ -152,6 +166,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                                     Ok(db_user) => {
                                         // Send user back to websocket
                                         ctx_addr.do_send(UserAuthenticated { user: db_user });
+                                        let success_msg = serde_json::json!({
+                                            "type": "authSuccess"
+                                        });
+                                        ctx_addr.do_send(RawMessage(success_msg.to_string()));
                                     },
                                     Err(e) => {
                                         println!("Error retrieving user from DB: {:?}", e);
@@ -188,7 +206,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                             self.party_manager.do_send(CreateParty {
                                 leader: user.id,
                                 socket: ctx.address(),
-                                db_pool: self.db_pool.clone(),
                             });
                         }
                     },
@@ -200,7 +217,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                                     user_id: user.id,
                                     code: code.to_string(),
                                     socket: ctx.address(),
-                                    db_pool: self.db_pool.clone(),
                                 });
                                 self.party_code = Some(code.to_string());
                             }
@@ -210,11 +226,16 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                         println!("Race start request");
                         if let Some(_user) = &self.user {
                             if let Some(party_code) = &self.party_code {
-                                self.party_manager.do_send(StartRace {
-                                    code: party_code.clone(),
-                                    prompt: "".to_string(),
-                                    db_pool: Some(self.db_pool.clone()),
-                                });
+                                // Get a random prompt from quotes
+                                use crate::quotes::Quotes;
+                                let quotes = Quotes::load_quotes();
+                                if let Some(random_quote) = quotes.choose(&mut rand::thread_rng()) {
+                                    let prompt = random_quote.text.clone();
+                                    self.party_manager.do_send(StartRace {
+                                        code: party_code.clone(),
+                                        prompt,
+                                    });
+                                }
                             }
                         }
                     },
@@ -222,13 +243,11 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                         println!("Race completed");
                         if let Some(user) = &self.user {
                             if let Some(party_code) = &self.party_code {
-                                if let Some(finish_time) = message.get("time").and_then(|v| v.as_f64()) {
-                                    let finish_time_ms = (finish_time) as u64;
+                                if let Some(wpm) = message.get("wpm").and_then(|v| v.as_f64()) {
                                     self.party_manager.do_send(FinishRace {
                                         user_id: user.id,
-                                        finish_time: finish_time_ms,
+                                        wpm,
                                         code: party_code.clone(),
-                                        db_pool: self.db_pool.clone(),
                                     });
                                     println!("Sent race leaderboard update")
                                 } else {
@@ -243,7 +262,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                             if let Some(party_code) = &self.party_code {
                                 self.party_manager.do_send(ResetRace {
                                     code: party_code.clone(),
-                                    db_pool: Some(self.db_pool.clone()),
                                 });
                             }
                         }
@@ -258,7 +276,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                         self.party_manager.do_send(LeaveParty {
                             user_id: user.id,
                             code: party_code.clone(),
-                            db_pool: self.db_pool.clone(),
                         });
                     }
                 }
@@ -274,7 +291,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                 self.hb = Instant::now();
             },
             Ok(Message::Binary(bin)) if bin.is_empty() => {
-                // Handle binary messages if needed
             },
             _ => {
                 println!("Unhandled/unmatched message detected");
@@ -283,7 +299,18 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
     }
 }
 
-// New message for handling authenticated user
+#[derive(actix::Message)]
+#[rtype(result = "()")]
+struct RawMessage(String);
+
+impl Handler<RawMessage> for MyWebSocket {
+    type Result = ();
+
+    fn handle(&mut self, msg: RawMessage, ctx: &mut Self::Context) {
+        ctx.text(msg.0);
+    }
+}
+
 #[derive(actix::Message)]
 #[rtype(result = "()")]
 struct UserAuthenticated {
@@ -300,6 +327,14 @@ impl Handler<UserAuthenticated> for MyWebSocket {
 }
 
 async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
+    println!("WebSocket connection request received");
+
+    if let Some(cookie) = req.cookie("user_id") {
+        println!("WebSocket request includes user_id cookie: {}", cookie.value());
+    } else {
+        println!("WebSocket request has no user_id cookie");
+    }
+
     let ws = MyWebSocket {
         hb: Instant::now(),
         user: None,
@@ -307,7 +342,8 @@ async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<AppSta
         party_code: None,
         db_pool: web::Data::new(data.db_pool.clone()),
     };
-    println!("Websocket connection established");
+
+    println!("Starting WebSocket connection");
     let resp = ws::start(ws, &req, stream)?;
     Ok(resp)
 }
@@ -329,21 +365,31 @@ impl MyWebSocket {
 async fn get_or_create_user(req: HttpRequest, db_pool: web::Data<DbPool>) -> Result<HttpResponse, Error> {
     match req.cookie("user_id") {
         Some(cookie) => {
+            println!("Found user_id cookie: {}", cookie.value());
             if let Some(user) = User::from_cookie(cookie.value()) {
+                println!("Parsed user from cookie with ID: {}", user.id);
+
                 // Check if user exists in DB
                 match User::get_by_id(user.id, &db_pool).await {
                     Ok(db_user) => {
-                        Ok(HttpResponse::Ok().json(db_user))
+                        println!("Found user in database: {}", db_user.id);
+                        Ok(HttpResponse::Ok()
+                            .cookie(db_user.to_cookie())
+                            .json(db_user))
                     },
-                    Err(_) => {
+                    Err(e) => {
+                        println!("User not found in DB: {:?}, creating new entry", e);
                         // User not in DB, store it
                         if let Err(e) = user.store(&db_pool).await {
                             println!("Error storing user: {:?}", e);
                         }
-                        Ok(HttpResponse::Ok().json(user))
+                        Ok(HttpResponse::Ok()
+                            .cookie(user.to_cookie())
+                            .json(user))
                     }
                 }
             } else {
+                println!("Failed to parse user from cookie, creating new user");
                 // Invalid cookie, create new user
                 let new_user = User::new();
                 if let Err(e) = new_user.store(&db_pool).await {
@@ -355,7 +401,7 @@ async fn get_or_create_user(req: HttpRequest, db_pool: web::Data<DbPool>) -> Res
             }
         },
         None => {
-            // No cookie, create new user
+            println!("No user_id cookie found, creating new user");
             let new_user = User::new();
             if let Err(e) = new_user.store(&db_pool).await {
                 println!("Error storing new user: {:?}", e);
@@ -371,7 +417,6 @@ async fn get_or_create_user(req: HttpRequest, db_pool: web::Data<DbPool>) -> Res
 async fn main() -> std::io::Result<()> {
     println!("starting HTTP server");
 
-    // Initialize database connection
     let db_pool = database::initialize_pool()
         .await
         .expect("Failed to create database pool");
@@ -379,7 +424,7 @@ async fn main() -> std::io::Result<()> {
     let party_manager = PartyManager::new(web::Data::new(db_pool.clone())).start();
     // dotenv().ok();
 
-    // let privkey_path = env::var("PRIVKEY_PATH") .expect("PRIVKEY_PATH must be set");
+    // let privkey_path = env::var("PRIVKEY_PATH").expect("PRIVKEY_PATH must be set");
     // let fullchain_path = env::var("PEMKEY_PATH").expect("PEMKEY_PATH must be set");
     //
     // env::set_var("RUST_BACKTRACE", "full");
@@ -411,7 +456,9 @@ async fn main() -> std::io::Result<()> {
         let cors = Cors::default()
             .allow_any_origin()
             .allow_any_method()
-            .allow_any_header();
+            .allow_any_header()
+            .expose_headers(vec!["Set-Cookie"])
+            .supports_credentials();
 
         App::new()
             .wrap(cors)

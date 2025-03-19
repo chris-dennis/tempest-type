@@ -1,100 +1,117 @@
-import  { createContext, useState, useEffect, useRef, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import {useSearchParams} from "react-router-dom";
+import { createContext, useState, useEffect, useRef, useCallback } from 'react';
 
 const WebSocketContext = createContext(null);
 
 const WebSocketProvider = ({ children }) => {
-    const [ws, setWs] = useState(null);
-    const wsRef = useRef(null);
     const [isConnected, setIsConnected] = useState(false);
-    const [user, setUser] = useState(null);
-    const [searchParams] = useSearchParams();
+    const wsRef = useRef(null);
+    const messageHandlersRef = useRef(new Map());
+    const [connectionAttempts, setConnectionAttempts] = useState(0);
 
-    const partyCode = searchParams.get('code');
-    const connectWebSocket = useCallback(async () => {
+    // Register a message handler for a specific message type
+    const registerMessageHandler = useCallback((type, handler) => {
+        messageHandlersRef.current.set(type, handler);
+        return () => messageHandlersRef.current.delete(type);
+    }, []);
 
-        let storedUser = JSON.parse(localStorage.getItem('user'));
-        if (!storedUser) {
-            try {
-                const response = await fetch('/api/users');
-                if (!response.ok) {
-                    throw new Error('Failed to fetch user');
-                }
-                storedUser = await response.json();
-            } catch (error) {
-                console.error("Error fetching user:", error);
-                storedUser = {
-                    id: uuidv4(),
-                    stats: {races_completed: 0, races_won: 0, avg_wpm: 0.0, top_wpm: 0.0},
-                    nickname: "Guest",
-                };
-            }
-            localStorage.setItem('user', JSON.stringify(storedUser));
+    const sendMessage = useCallback((message) => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            console.log("Sending message:", message);
+            wsRef.current.send(JSON.stringify(message));
+            return true;
+        } else {
+            console.error('WebSocket not connected');
+            return false;
+        }
+    }, []);
+
+    const connectWebSocket = useCallback(() => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            console.log('WebSocket already connected');
+            return;
         }
 
-        setUser(storedUser);
-        // const socket = new WebSocket('wss://backend.tempesttype.xyz:8080/ws'); // 'prod'
-        const socket = new WebSocket('ws://localhost:8080/ws'); // local
+        console.log('Creating new WebSocket connection');
+        const socket = new WebSocket('ws://localhost:8080/ws');
 
         socket.onopen = () => {
-            console.log('WebSocket connection opened');
+            console.log('WebSocket connection opened - READY FOR MESSAGES');
             setIsConnected(true);
             startHeartbeat(socket);
-            socket.send(JSON.stringify({type: 'auth', user: storedUser}));
-
-            if (partyCode){
-                sendWebSocketMessage({type: 'rejoinParty', code: partyCode});
-                console.log(partyCode)
-            }
         };
 
         socket.onmessage = (event) => {
-            const message = JSON.parse(event.data);
+            let message;
+            try {
+                message = JSON.parse(event.data);
+            } catch (error) {
+                console.error('Error parsing message:', error);
+                return;
+            }
+
             console.log('Received message:', message);
+
+            if (message.type && messageHandlersRef.current.has(message.type)) {
+                messageHandlersRef.current.get(message.type)(message);
+            }
         };
 
-        socket.onclose = () => {
-            console.log('WebSocket connection closed');
+        socket.onclose = (event) => {
+            console.log('WebSocket connection closed', event);
             setIsConnected(false);
+            clearHeartbeat(socket);
+
+            if (!event.wasClean && connectionAttempts < 3) {
+                console.log(`Connection attempt ${connectionAttempts + 1}/3`);
+                setConnectionAttempts(prev => prev + 1);
+                setTimeout(() => {
+                    connectWebSocket();
+                }, 3000);
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error('WebSocket error:', error);
         };
 
         wsRef.current = socket;
-        setWs(socket);
-    }, []);
+    }, [connectionAttempts]);
+
+    const startHeartbeat = (socket) => {
+        socket.heartbeatInterval = setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'ping' }));
+            } else {
+                clearInterval(socket.heartbeatInterval);
+            }
+        }, 15000);
+    };
+
+    const clearHeartbeat = (socket) => {
+        if (socket.heartbeatInterval) {
+            clearInterval(socket.heartbeatInterval);
+            socket.heartbeatInterval = null;
+        }
+    };
 
     useEffect(() => {
         connectWebSocket();
 
         return () => {
             if (wsRef.current) {
+                clearHeartbeat(wsRef.current);
                 wsRef.current.close();
+                wsRef.current = null;
             }
         };
     }, [connectWebSocket]);
 
-    const sendWebSocketMessage = (message) => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            console.log("Message sent")
-            wsRef.current.send(JSON.stringify(message));
-        } else {
-            console.error('WebSocket not connected');
-        }
-    };
-
-    const startHeartbeat = (socket) => {
-        const interval = setInterval(() => {
-            if (socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ type: 'ping' }));
-                // console.log('sent ping');
-            } else {
-                clearInterval(interval);
-            }
-        }, 15000);
-    };
-
     return (
-        <WebSocketContext.Provider value={{ ws, isConnected, sendWebSocketMessage, user }}>
+        <WebSocketContext.Provider value={{
+            isConnected,
+            sendMessage,
+            registerMessageHandler
+        }}>
             {children}
         </WebSocketContext.Provider>
     );

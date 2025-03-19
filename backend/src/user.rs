@@ -42,6 +42,10 @@ impl User {
         let value = serde_json::to_string(self).unwrap();
         Cookie::build("user_id", value)
             .same_site(SameSite::Lax)
+            .path("/")
+            .secure(true)
+            .http_only(false)
+            .max_age(time::Duration::days(30))
             .finish()
     }
 
@@ -121,7 +125,6 @@ impl User {
     }
 
     pub async fn update_stats(&mut self, db_pool: &web::Data<DbPool>) -> Result<(), SqlxError> {
-        // Update stats in database
         sqlx::query!(
             "UPDATE user_stats
              SET races_completed = $1, races_won = $2, avg_wpm = $3, top_wpm = $4, updated_at = NOW()
