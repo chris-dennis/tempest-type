@@ -1,7 +1,5 @@
 import './App.css'
 import './components/RaceBox.jsx'
-import Racebox from "./components/RaceBox.jsx";
-import WebSocket from "./components/PartyManager.jsx";
 
 import {Routes, Route, BrowserRouter} from 'react-router-dom';
 import {RaceProvider} from "./components/RaceContext.jsx";

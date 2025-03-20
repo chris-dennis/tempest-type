@@ -13,27 +13,16 @@ const PartyProvider = ({ children }) => {
     const [raceOver, setRaceOver] = useState(false);
     const [message, setMessage] = useState('');
     const [searchParams] = useSearchParams();
-
+    const [isLoading, setIsLoading] = useState(false);
+    const [leader, setLeader] = useState(null);
     const initialPartyJoinAttempted = useRef(false);
     const partyCreatedOrJoined = useRef(false);
+    const memberColors = useRef({});
 
     const { isConnected, sendMessage, registerMessageHandler } = useContext(WebSocketContext);
     const { user, isAuthenticated } = useContext(UserContext);
     const navigate = useNavigate();
 
-    // Color management
-    const memberColors = useRef({});
-
-    const generateRandomColor = useCallback(() => {
-        return `#${Math.floor(Math.random() * 16777215).toString(16)}`;
-    }, []);
-
-    const assignColorToMember = useCallback((memberId) => {
-        if (!memberColors.current[memberId]) {
-            memberColors.current[memberId] = generateRandomColor();
-        }
-        return memberColors.current[memberId];
-    }, [generateRandomColor]);
 
     // Create a new party
     const createParty = useCallback(() => {
@@ -64,6 +53,7 @@ const PartyProvider = ({ children }) => {
             return false;
         }
 
+        setIsLoading(true);
         const success = sendMessage({ type: 'joinParty', code });
         if (success) {
             partyCreatedOrJoined.current = true;
@@ -71,12 +61,15 @@ const PartyProvider = ({ children }) => {
             setMessage('Joining party...');
         } else {
             setMessage('Failed to join party - connection issue');
+            setIsLoading(false);
         }
         return success;
     }, [user, sendMessage]);
 
-    // Determine party leadership
+    // Find party leader
     const updatePartyLeadership = useCallback((members, leader) => {
+        setLeader(leader);
+
         if (user && leader === user.id) {
             setIsPartyLeader(true);
         } else if (members.length === 1 && members[0]?.id === user?.id) {
@@ -96,6 +89,9 @@ const PartyProvider = ({ children }) => {
             setLeaderboard([]);
             setRaceOver(false);
             setMessage('');
+            setLeader(null);
+
+            memberColors.current = {};
 
             // Reset the party join/create flags
             partyCreatedOrJoined.current = false;
@@ -152,15 +148,15 @@ const PartyProvider = ({ children }) => {
             setPartyMembers(validMembers);
             updatePartyLeadership(validMembers, message.leader);
 
-            // Color assignment
-            validMembers.forEach(member => {
-                if (member && member.id) {
-                    assignColorToMember(member.id);
-                }
-            });
+            // Check and update member colors from server
+            if (message.member_colors && Object.keys(message.member_colors).length > 0) {
+                console.log('Received member colors:', message.member_colors);
+                memberColors.current = message.member_colors;
+            }
 
             navigate(`/party?code=${message.code}`);
             setMessage('');
+            setIsLoading(false);
         });
 
         // Handle user joined
@@ -173,6 +169,13 @@ const PartyProvider = ({ children }) => {
                 : [];
 
             setPartyMembers(joinedMembers);
+
+            // Update member colors if provided
+            if (message.member_colors && Object.keys(message.member_colors).length > 0) {
+                console.log('Received member colors on user joined:', message.member_colors);
+                memberColors.current = message.member_colors;
+            }
+
             setMessage('');
         });
 
@@ -189,6 +192,7 @@ const PartyProvider = ({ children }) => {
         // Handle errors
         const unregisterError = registerMessageHandler('error', (message) => {
             setMessage(message.message || 'An error occurred');
+            setIsLoading(false);
         });
 
         return () => {
@@ -197,11 +201,11 @@ const PartyProvider = ({ children }) => {
             unregisterLeaderboardUpdate();
             unregisterError();
         };
-    }, [isConnected, registerMessageHandler, updatePartyLeadership, navigate, assignColorToMember]);
+    }, [isConnected, registerMessageHandler, updatePartyLeadership, navigate]);
 
-    // Get color for a specific member
     const getMemberColor = useCallback((memberId) => {
-        return memberColors.current[memberId] || '#808080';
+        const memberIdStr = String(memberId);
+        return memberColors.current[memberIdStr] || '#808080';
     }, []);
 
     return (
@@ -214,10 +218,12 @@ const PartyProvider = ({ children }) => {
             setRaceOver,
             message,
             setMessage,
+            isLoading,
             createParty,
             joinParty,
             leaveParty,
-            getMemberColor
+            getMemberColor,
+            leader
         }}>
             {children}
         </PartyContext.Provider>

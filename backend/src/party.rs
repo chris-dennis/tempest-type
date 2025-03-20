@@ -19,6 +19,7 @@ pub struct Party {
     pub finish_times: HashMap<Uuid, u64>,
     #[serde(skip)]
     pub current_prompt_length: Option<usize>,
+    pub member_colors: HashMap<String, String>,
 }
 
 impl Party {
@@ -27,6 +28,8 @@ impl Party {
         sockets.insert(leader, socket);
 
         let leader_user = User::get_by_id(leader, db_pool).await?;
+        let mut member_colors = HashMap::new();
+        member_colors.insert(leader.to_string(), Self::generate_random_color());
 
         Ok(Self {
             code: Self::generate_party_code(),
@@ -35,6 +38,7 @@ impl Party {
             sockets,
             finish_times: HashMap::new(),
             current_prompt_length: None,
+            member_colors
         })
     }
 
@@ -47,16 +51,34 @@ impl Party {
             .collect()
     }
 
+    pub fn generate_random_color() -> String {
+        use rand::{thread_rng, Rng};
+        let mut rng = thread_rng();
+
+        let r = rng.gen_range(0..=255);
+        let g = rng.gen_range(0..=255);
+        let b = rng.gen_range(0..=255);
+
+        format!("#{:02X}{:02X}{:02X}", r, g, b)
+    }
+
     pub async fn add_member(&mut self, user_id: Uuid, socket: Addr<MyWebSocket>, db_pool: &web::Data<DbPool>) -> Result<(), sqlx::Error> {
         let user = User::get_by_id(user_id, db_pool).await?;
         self.members.push(user);
         self.sockets.insert(user_id, socket);
+
+        if !self.member_colors.contains_key(&user_id.to_string()) {
+            self.member_colors.insert(user_id.to_string(), Self::generate_random_color());
+            println!("{:?}", self.member_colors);
+        }
+
         Ok(())
     }
 
     pub fn remove_member(&mut self, user_id: Uuid) {
         self.members.retain(|member| member.id != user_id);
         self.sockets.remove(&user_id);
+        self.member_colors.remove(&user_id.to_string());
     }
 
     pub fn is_empty(&self) -> bool {
@@ -162,7 +184,8 @@ pub struct JoinParty {
 pub struct PartyUpdate {
     pub code: String,
     pub party_members: Vec<User>,
-    pub leader: Uuid
+    pub leader: Uuid,
+    pub member_colors: HashMap<String, String>,
 }
 
 #[derive(Message, Serialize, Clone)]
@@ -220,13 +243,18 @@ impl Handler<LeaveParty> for PartyManager {
         let mut store = PARTY_STORE.lock().unwrap();
         if let Some(party) = store.get_mut(&msg.code) {
             party.remove_member(msg.user_id);
+            let members_colors = party.member_colors.clone();
             if party.is_empty() {
                 store.remove(&msg.code);
             } else {
+                if party.leader == msg.user_id && !party.members.is_empty() {
+                    party.leader = party.members[0].id;
+                }
                 let update = PartyUpdate {
                     code: msg.code.clone(),
                     party_members: party.members.clone(),
-                    leader: party.leader
+                    leader: party.leader,
+                    member_colors: members_colors,
                 };
                 party.broadcast(update);
             }
@@ -248,7 +276,7 @@ impl Handler<CreateParty> for PartyManager {
                     let code = party.code.clone();
                     let leader = party.leader;
                     let members_clone = party.members.clone();
-
+                    let members_colors = party.member_colors.clone();
                     let mut store = PARTY_STORE.lock().unwrap();
                     store.insert(code.clone(), party);
 
@@ -256,6 +284,7 @@ impl Handler<CreateParty> for PartyManager {
                         code: code.clone(),
                         party_members: members_clone,
                         leader,
+                        member_colors: members_colors,
                     };
 
                     socket_clone.do_send(update.clone());
@@ -287,12 +316,17 @@ impl Handler<JoinParty> for PartyManager {
             let mut store = PARTY_STORE.lock().unwrap();
 
             if let Some(party) = store.get_mut(&code) {
+                if !party.member_colors.contains_key(&user_id.to_string()) {
+                    party.member_colors.insert(user_id.to_string(), Party::generate_random_color());
+                }
                 match party.add_member(user_id, msg.socket, &db_pool).await {
                     Ok(_) => {
+                        let members_colors = party.member_colors.clone();
                         let update = PartyUpdate {
                             code: code.clone(),
                             party_members: party.members.clone(),
                             leader: party.leader,
+                            member_colors: members_colors,
                         };
 
                         party.broadcast(update);
@@ -309,10 +343,12 @@ impl Handler<JoinParty> for PartyManager {
                         store.insert(code.clone(), new_party);
 
                         if let Some(party) = store.get(&code) {
+                            let members_colors = party.member_colors.clone();
                             let update = PartyUpdate {
                                 code: code.clone(),
                                 party_members: party.members.clone(),
                                 leader: user_id,
+                                member_colors: members_colors,
                             };
 
                             socket_clone.do_send(update.clone());

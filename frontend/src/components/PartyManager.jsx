@@ -16,10 +16,12 @@ function PartyManager() {
         leaderboard,
         raceOver,
         message,
+        isLoading,
         setMessage,
         createParty,
         joinParty,
-        getMemberColor
+        getMemberColor,
+        leader
     } = useContext(PartyContext);
 
     const {
@@ -55,6 +57,12 @@ function PartyManager() {
 
     return (
         <>
+            {isLoading && (
+                <div className="loading-overlay">
+                    <div className="loading-spinner"></div>
+                    <p>Loading... Please wait.</p>
+                </div>
+            )}
             {isConnected ? (
                 <div>
                     {message && (
@@ -103,8 +111,8 @@ function PartyManager() {
                                                         backgroundColor: getMemberColor(member.id)
                                                     }}>
                                                     {member.nickname || 'Anonymous'}
-                                                    {member.id === user?.id ? '(You)' : ''}
-                                                    {isPartyLeader && member.id === user?.id ? ' 👑' : ''}
+                                                    {member.id === user?.id ? ' (You)' : ''}
+                                                    {member.id === leader ? ' 👑' : ''}
                                                 </div>
                                             ) : null
                                         ))

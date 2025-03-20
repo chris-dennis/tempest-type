@@ -65,6 +65,7 @@ impl Handler<PartyUpdate> for MyWebSocket {
             "code": msg.code,
             "partyMembers": msg.party_members,
             "leader": msg.leader,
+            "member_colors": msg.member_colors,
         });
 
         ctx.text(update.to_string());
@@ -131,7 +132,7 @@ impl Handler<LeaderboardUpdate> for MyWebSocket {
             "code": msg.code,
             "leaderboard": msg.leaderboard.iter().map(|entry| {
                 serde_json::json!({
-                    "user_id": entry.user,
+                    "user": entry.user,
                     "wpm": entry.wpm,
                 })
             }).collect::<Vec<_>>(),

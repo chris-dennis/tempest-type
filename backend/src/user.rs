@@ -121,6 +121,27 @@ impl User {
         let mut updated_user = user;
         updated_user.nickname = new_nickname;
 
+        // Broadcast nickname update to all parties the user is in
+        let mut store = crate::party::PARTY_STORE.lock().unwrap();
+        for (_code, party) in store.iter_mut() {
+            if party.members.iter().any(|m| m.id == updated_user.id) {
+
+                for member in &mut party.members {
+                    if member.id == updated_user.id {
+                        member.nickname = updated_user.nickname.clone();
+                    }
+                }
+
+                let update = crate::party::PartyUpdate {
+                    code: party.code.clone(),
+                    party_members: party.members.clone(),
+                    leader: party.leader,
+                    member_colors: party.member_colors.clone(),
+                };
+                party.broadcast(update);
+            }
+        }
+
         Ok(updated_user)
     }
 
