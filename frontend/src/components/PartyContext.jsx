@@ -115,10 +115,13 @@ const PartyProvider = ({ children }) => {
             console.log('Attempting to join party from URL:', code);
             initialPartyJoinAttempted.current = true;
 
+            setPartyCode(code);
+
+            setIsLoading(true);
+
             setTimeout(() => {
                 if (!partyCreatedOrJoined.current) {
                     sendMessage({ type: 'rejoinParty', code });
-                    setMessage('Joining party from URL...');
                 }
             }, 500); // delay for auth
         }
@@ -189,7 +192,6 @@ const PartyProvider = ({ children }) => {
             }
         });
 
-        // Handle errors
         const unregisterError = registerMessageHandler('error', (message) => {
             setMessage(message.message || 'An error occurred');
             setIsLoading(false);

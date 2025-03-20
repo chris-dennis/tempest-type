@@ -57,17 +57,17 @@ function PartyManager() {
 
     return (
         <>
-            {isLoading && (
-                <div className="loading-overlay">
-                    <div className="loading-spinner"></div>
-                    <p>Loading... Please wait.</p>
+            {isConnected && partyCode && isLoading && (
+                <div className="url-joining-message">
+                    <div className="mini-spinner"></div>
+                    <p>Connecting to party {partyCode}...</p>
                 </div>
             )}
             {isConnected ? (
                 <div>
                     {message && (
-                        <div className="message-container">
-                            <p>{message}</p>
+                        <div className={`message-container ${message ? 'has-message' : ''}`}>
+                            {message && <p>{message}</p>}
                         </div>
                     )}
 

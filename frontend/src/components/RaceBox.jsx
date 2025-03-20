@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useContext } from 'react';
-import { UserContext } from './UserContext';
-import { WebSocketContext } from './WebSocketContext';
-import { RaceContext } from './RaceContext';
-import { PartyContext } from './PartyContext';
+import {useContext, useEffect, useRef, useState} from 'react';
+import {UserContext} from './UserContext';
+import {WebSocketContext} from './WebSocketContext';
+import {RaceContext} from './RaceContext';
+import {PartyContext} from './PartyContext';
 import Typewriter from 'typewriter-effect/dist/core';
 import UserStats from './UserStats';
 
@@ -25,16 +25,43 @@ function RaceBox() {
     } = useContext(RaceContext);
     const hasSentFinish = useRef(false);
 
-    // Initialize typewriter effect
     useEffect(() => {
         if (isConnected) {
+            document.getElementById('typewriter').style.color = `#${Math.floor(Math.random() * 16777215).toString(16)}`;
+
             const typewriter = new Typewriter('#typewriter', {
                 loop: false,
+                cursor: ''
             });
 
-            typewriter.typeString('Tempest Type').start();
+            typewriter
+                .typeString('Tempest Type')
+                .callFunction(() => {
+                    const typewriterEl = document.getElementById('typewriter');
+                    if (typewriterEl) {
+                        const wrapper = document.createElement('span');
+                        wrapper.style.display = 'inline-flex';
+                        wrapper.style.alignItems = 'center';
+                        wrapper.style.gap = '8px';
+
+                        const img = document.createElement('img');
+                        img.src = '/wind.svg';
+                        img.alt = 'Wind Icon';
+                        img.style.width = '64px';
+                        img.style.height = '64px';
+                        img.style.verticalAlign = 'middle';
+                        img.style.marginLeft = '32px';
+
+                        wrapper.innerHTML = 'Tempest Type';
+                        wrapper.appendChild(img);
+                        typewriterEl.innerHTML = '';
+                        typewriterEl.appendChild(wrapper);
+                    }
+                })
+                .start();
         }
     }, [isConnected]);
+
 
     useEffect(() => {
         if (!raceStarted) {

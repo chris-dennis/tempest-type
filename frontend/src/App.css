@@ -9,7 +9,6 @@
   font-family: 'Courier New', Courier, monospace;
   font-size: 4em;
   font-weight: bold;
-  color: #ff3737;
   text-shadow: #000000 3px 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -130,7 +129,7 @@ ul {
   bottom: 0;
   left: 0;
   width: 100%;
-  color: #bababa; /* Color of the text in the footer */
+  color: #bababa;
 }
 
 .footer-info {
@@ -144,4 +143,89 @@ ul {
   margin: 0 10px;
   color: #bababa;
   text-decoration: none;
+}
+
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  color: white;
+}
+
+.loading-spinner {
+  border: 6px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top: 6px solid #fff;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.url-joining-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  background-color: #4b6bfb20;
+  border-left: 4px solid #4b6bfb;
+  border-radius: 4px;
+  margin: 15px 0;
+  animation: pulse 1.5s infinite;
+}
+
+.url-joining-message .mini-spinner {
+  border: 3px solid rgba(75, 107, 251, 0.3);
+  border-top: 3px solid #4b6bfb;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes pulse {
+  0% { background-color: #4b6bfb10; }
+  50% { background-color: #4b6bfb30; }
+  100% { background-color: #4b6bfb10; }
+}
+
+.message-container {
+  height: 24px;
+  margin: 10px 0;
+  padding: 5px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: absolute;
+}
+
+.message-container p {
+  margin: 0;
+  transition: all 0.3s ease;
+  max-width: 100%;
+  text-align: center;
+}
+
+/* For message changes */
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(-5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.message-container.has-message p {
+  animation: fadeInOut 0.3s ease forwards;
 }
