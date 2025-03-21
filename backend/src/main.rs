@@ -16,7 +16,7 @@ use actix_cors::Cors;
 use std::time::{Duration, Instant};
 use dotenv::dotenv;
 use rand::prelude::SliceRandom;
-use serde::{Deserialize};
+use serde::{Deserialize, Serialize};
 use ws::Message;
 
 use crate::user::User;
@@ -40,6 +40,15 @@ struct AuthMessage {
 struct UpdateNickname{
     user: User,
     nickname: String,
+}
+
+#[derive(Serialize)]
+struct RaceResultResponse {
+    id: uuid::Uuid,
+    nickname: String,
+    wpm: f32,
+    party_code: Option<String>,
+    completed_at: String,
 }
 
 struct AppState {
@@ -414,6 +423,44 @@ async fn get_or_create_user(req: HttpRequest, db_pool: web::Data<DbPool>) -> Res
     }
 }
 
+#[get("/api/race-results")]
+async fn get_race_results(db_pool: web::Data<DbPool>) -> Result<HttpResponse, Error> {
+    match fetch_race_results(&db_pool).await {
+        Ok(results) => Ok(HttpResponse::Ok().json(results)),
+        Err(e) => {
+            eprintln!("Error fetching race results: {:?}", e);
+            Ok(HttpResponse::InternalServerError().json(
+                serde_json::json!({"error": "Failed to fetch race results"})
+            ))
+        }
+    }
+}
+
+async fn fetch_race_results(db_pool: &web::Data<DbPool>) -> Result<Vec<RaceResultResponse>, sqlx::Error> {
+    let results = sqlx::query!(
+        r#"
+        SELECT r.id, r.party_code, r.user_id, r.wpm, r.completed_at, u.nickname
+        FROM race_results r
+        LEFT JOIN users u ON r.user_id = u.id
+        ORDER BY r.wpm DESC
+        LIMIT 100
+        "#
+    )
+        .fetch_all(db_pool.get_ref())
+        .await?;
+
+    Ok(results
+        .into_iter()
+        .map(|row| RaceResultResponse {
+            id: row.id,
+            nickname: row.nickname,
+            wpm: row.wpm as f32,
+            party_code: row.party_code,
+            completed_at: row.completed_at.to_rfc3339(),
+        })
+        .collect())
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     println!("starting HTTP server");
@@ -470,6 +517,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(db_pool.clone()))
             .route("/ws", web::get().to(ws_index))
             .service(get_or_create_user)
+            .service(get_race_results)
 
     })
         .bind(("0.0.0.0", 8080))?

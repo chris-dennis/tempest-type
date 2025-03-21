@@ -388,66 +388,61 @@ impl Handler<FinishRace> for PartyManager {
         let db_pool = self.db_pool.clone();
         let user_id = msg.user_id;
         let wpm = msg.wpm;
+        let party_code = msg.code.clone();
 
         let future = async move {
             let mut store = PARTY_STORE.lock().unwrap();
 
-            let party_code = store.iter().find_map(|(code, party)| {
-                if party.sockets.contains_key(&user_id) {
-                    Some(code.clone())
-                } else {
-                    None
+            if let Some(party) = store.get_mut(&party_code) {
+                if let Err(e) = party.broadcast_finish_race(user_id, wpm, &db_pool).await {
+                    eprintln!("Error in broadcast_finish_race: {:?}", e);
                 }
-            });
 
-            if let Some(code) = party_code {
-                if let Some(party) = store.get_mut(&code) {
-                    if let Err(e) = party.broadcast_finish_race(user_id, wpm, &db_pool).await {
-                        eprintln!("Error in broadcast_finish_race: {:?}", e);
-                    }
+                // Store race result in the database
+                if let Err(e) = store_race_result(user_id, &party_code, wpm, &db_pool).await {
+                    eprintln!("Error storing race result: {:?}", e);
+                }
 
-                    // Fetch the user and update their stats
-                    match User::get_by_id(user_id, &db_pool).await {
-                        Ok(mut user) => {
-                            user.stats.races_completed += 1;
+                // Fetch the user and update their stats
+                match User::get_by_id(user_id, &db_pool).await {
+                    Ok(mut user) => {
+                        user.stats.races_completed += 1;
 
+                        // Update avg_wpm (rolling average)
+                        let total_races = user.stats.races_completed as f32;
+                        user.stats.avg_wpm = ((user.stats.avg_wpm * (total_races - 1.0)) + wpm as f32) / total_races;
 
-                            // Update avg_wpm (rolling average)
-                            let total_races = user.stats.races_completed as f32;
-                            user.stats.avg_wpm = ((user.stats.avg_wpm * (total_races - 1.0)) + wpm as f32) / total_races;
-
-                            // Update top_wpm if this race was better
-                            if wpm as f32 > user.stats.top_wpm {
-                                user.stats.top_wpm = wpm as f32;
-                            }
-
-                            // Check if user is the winner (highest WPM)
-                            let is_winner = party.finish_times.values()
-                                .all(|&other_wpm| wpm >= other_wpm as f64);
-
-                            if is_winner {
-                                user.stats.races_won += 1;
-                            }
-
-                            if let Err(e) = user.update_stats(&db_pool).await {
-                                eprintln!("Error updating user stats: {:?}", e);
-                            }
-
-                            // Send stats update back to user
-                            if let Some(socket) = party.sockets.get(&user_id) {
-                                let updated_user = User::get_by_id(user_id, &db_pool).await.ok();
-                                if let Some(user_data) = updated_user {
-                                    let stats_update = serde_json::json!({
-                                        "type": "statsUpdate",
-                                        "user": user_data
-                                    });
-                                    socket.do_send(RawMessage(stats_update.to_string()));
-                                }
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Error fetching user {}: {:?}", user_id, e);
+                        // Update top_wpm if this race was better
+                        if wpm as f32 > user.stats.top_wpm {
+                            user.stats.top_wpm = wpm as f32;
                         }
+
+                        // Check if user is the winner (highest WPM)
+                        let is_winner = party.finish_times.values()
+                            .all(|&other_wpm| wpm >= other_wpm as f64);
+
+                        if is_winner {
+                            user.stats.races_won += 1;
+                        }
+
+                        if let Err(e) = user.update_stats(&db_pool).await {
+                            eprintln!("Error updating user stats: {:?}", e);
+                        }
+
+                        // Send stats update back to user
+                        if let Some(socket) = party.sockets.get(&user_id) {
+                            let updated_user = User::get_by_id(user_id, &db_pool).await.ok();
+                            if let Some(user_data) = updated_user {
+                                let stats_update = serde_json::json!({
+                                    "type": "statsUpdate",
+                                    "user": user_data
+                                });
+                                socket.do_send(RawMessage(stats_update.to_string()));
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Error fetching user {}: {:?}", user_id, e);
                     }
                 }
             }
@@ -455,6 +450,26 @@ impl Handler<FinishRace> for PartyManager {
 
         actix::spawn(future);
     }
+}
+
+async fn store_race_result(user_id: Uuid, party_code: &str, wpm: f64, db_pool: &web::Data<DbPool>) -> Result<(), sqlx::Error> {
+    let finish_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    sqlx::query!(
+        "INSERT INTO race_results (party_code, user_id, wpm, finish_time)
+         VALUES ($1, $2, $3, $4)",
+        party_code,
+        user_id,
+        wpm as f32,
+        finish_time
+    )
+        .execute(db_pool.get_ref())
+        .await?;
+
+    Ok(())
 }
 
 impl Handler<ResetRace> for PartyManager {

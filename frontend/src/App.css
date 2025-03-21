@@ -229,3 +229,99 @@ ul {
 .message-container.has-message p {
   animation: fadeInOut 0.3s ease forwards;
 }
+
+.global-leaderboard {
+  margin-top: 30px;
+  padding: 20px;
+  border-radius: 10px;
+  background-color: #2a2a2a;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  max-width: 900px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.global-leaderboard h2 {
+  margin-top: 0;
+  display: inline-block;
+  margin-right: 15px;
+}
+
+.refresh-button {
+  padding: 6px 12px;
+  margin-bottom: 10px;
+  background-color: #4b6bfb;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.refresh-button:hover {
+  background-color: #3a5aea;
+}
+
+.refresh-button:disabled {
+  background-color: #777;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: #ff6b6b;
+  margin: 10px 0;
+}
+
+.leaderboard-table-container {
+  overflow-x: auto;
+  margin-top: 15px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.leaderboard-table th {
+  background-color: #333;
+  padding: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.leaderboard-table td {
+  padding: 10px;
+  border-bottom: 1px solid #444;
+}
+
+.leaderboard-table tr:nth-child(even) {
+  background-color: #3a3a3a;
+}
+
+.leaderboard-table tr:hover {
+  background-color: #454545;
+}
+
+.leaderboard-table th:first-child,
+.leaderboard-table td:first-child {
+  width: 70px;
+  text-align: center;
+}
+
+/* Highlight top 3 ranks */
+.leaderboard-table tr:nth-child(1) td {
+  background-color: rgba(255, 215, 0, 0.2); /* Gold */
+}
+
+.leaderboard-table tr:nth-child(2) td {
+  background-color: rgba(192, 192, 192, 0.2); /* Silver */
+}
+
+.leaderboard-table tr:nth-child(3) td {
+  background-color: rgba(205, 127, 50, 0.2); /* Bronze */
+}
