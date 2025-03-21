@@ -718,7 +718,7 @@ impl Quotes {
                 text: String::from("A flock of birds takes to the sky, their synchronized movements a display of natural harmony."),
             },
             Quote {
-                text: String::from("In a bustling café, the clatter of dishes and the murmur of conversation create a lively atmosphere."),
+                text: String::from("In a bustling cafe, the clatter of dishes and the murmur of conversation create a lively atmosphere."),
             },
             Quote {
                 text: String::from("A mountain stream flows over rocks and pebbles, its clear water sparkling in the sunlight."),
@@ -775,7 +775,7 @@ impl Quotes {
                 text: String::from("A peaceful evening is spent on the porch, watching the fireflies dance in the twilight."),
             },
             Quote {
-                text: String::from("The rich aroma of freshly ground coffee beans fills the café, inviting patrons to enjoy a cup."),
+                text: String::from("The rich aroma of freshly ground coffee beans fills the cafe, inviting patrons to enjoy a cup."),
             },
             Quote {
                 text: String::from("A snowy owl perches on a branch, its white feathers blending seamlessly with the winter landscape."),

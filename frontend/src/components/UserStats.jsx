@@ -12,7 +12,7 @@ function UserStats() {
     };
 
     const handleSaveNickname = () => {
-        if (newNickname && newNickname.length < 20) {
+        if (newNickname && newNickname.length < 16) {
             updateNickname(newNickname);
             setNewNickname('');
         }
@@ -32,6 +32,7 @@ function UserStats() {
                 />
             </p>
             <p>Races Completed: {user.stats.races_completed}</p>
+            <p>Races Won: {user.stats.races_won}</p>
             <p>Average WPM: {user.stats.avg_wpm.toFixed(0).replace(".00", "")}</p>
             <p>Top WPM: {user.stats.top_wpm.toFixed(0).replace(".00", "")}</p>
         </div>

@@ -18,6 +18,7 @@ const PartyProvider = ({ children }) => {
     const initialPartyJoinAttempted = useRef(false);
     const partyCreatedOrJoined = useRef(false);
     const memberColors = useRef({});
+    const sessionWins = useRef({});
 
     const { isConnected, sendMessage, registerMessageHandler } = useContext(WebSocketContext);
     const { user, isAuthenticated } = useContext(UserContext);
@@ -92,6 +93,7 @@ const PartyProvider = ({ children }) => {
             setLeader(null);
 
             memberColors.current = {};
+            sessionWins.current = {};
 
             // Reset the party join/create flags
             partyCreatedOrJoined.current = false;
@@ -151,10 +153,15 @@ const PartyProvider = ({ children }) => {
             setPartyMembers(validMembers);
             updatePartyLeadership(validMembers, message.leader);
 
-            // Check and update member colors from server
+            // Member colors from server
             if (message.member_colors && Object.keys(message.member_colors).length > 0) {
                 console.log('Received member colors:', message.member_colors);
                 memberColors.current = message.member_colors;
+            }
+            // Session wins
+            if (message.session_wins && Object.keys(message.session_wins).length > 0) {
+                console.log('Received session wins:', message.session_wins);
+                sessionWins.current = message.session_wins;
             }
 
             navigate(`/party?code=${message.code}`);
@@ -177,6 +184,10 @@ const PartyProvider = ({ children }) => {
             if (message.member_colors && Object.keys(message.member_colors).length > 0) {
                 console.log('Received member colors on user joined:', message.member_colors);
                 memberColors.current = message.member_colors;
+            }
+            if (message.session_wins && Object.keys(message.session_wins).length > 0) {
+                console.log('Received session wins on user joined:', message.session_wins);
+                sessionWins.current = message.session_wins;
             }
 
             setMessage('');
@@ -210,6 +221,15 @@ const PartyProvider = ({ children }) => {
         return memberColors.current[memberIdStr] || '#808080';
     }, []);
 
+    const getMemberById = useCallback((memberId) => {
+        return partyMembers.find(member => member.id === memberId);
+    }, [partyMembers]);
+
+    const getMemberSessionWins = useCallback((memberId) => {
+        const memberIdStr = String(memberId);
+        return sessionWins.current[memberIdStr] || 0;
+    }, []);
+
     return (
         <PartyContext.Provider value={{
             partyCode,
@@ -225,6 +245,8 @@ const PartyProvider = ({ children }) => {
             joinParty,
             leaveParty,
             getMemberColor,
+            getMemberById,
+            getMemberSessionWins,
             leader
         }}>
             {children}

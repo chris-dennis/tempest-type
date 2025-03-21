@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use ws::Message;
 
 use crate::user::User;
-use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace, StatsUpdate};
+use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace, StatsUpdate, CursorPositionUpdate, CursorPositions};
 use crate::database::DbPool;
 
 struct MyWebSocket {
@@ -51,6 +51,12 @@ struct RaceResultResponse {
     completed_at: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct PositionUpdate {
+    position: usize,
+    party_code: String,
+}
+
 struct AppState {
     party_manager: Addr<PartyManager>,
     db_pool: DbPool,
@@ -75,6 +81,7 @@ impl Handler<PartyUpdate> for MyWebSocket {
             "partyMembers": msg.party_members,
             "leader": msg.leader,
             "member_colors": msg.member_colors,
+            "session_wins": msg.session_wins,
         });
 
         ctx.text(update.to_string());
@@ -148,6 +155,20 @@ impl Handler<LeaderboardUpdate> for MyWebSocket {
         });
 
         ctx.text(update.to_string());
+    }
+}
+
+impl Handler<CursorPositions> for MyWebSocket {
+    type Result = ();
+
+    fn handle(&mut self, msg: CursorPositions, ctx: &mut Self::Context) {
+        let positions = serde_json::json!({
+            "type": "cursorPositions",
+            "code": msg.code,
+            "positions": msg.positions,
+        });
+
+        ctx.text(positions.to_string());
     }
 }
 
@@ -273,6 +294,23 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                                 self.party_manager.do_send(ResetRace {
                                     code: party_code.clone(),
                                 });
+                            }
+                        }
+                    },
+                    Some("positionUpdate") => {
+                        if let Some(user) = &self.user {
+                            if let Some(party_code) = &self.party_code {
+                                if let (Some(position), Some(last_update)) = (
+                                    message.get("position").and_then(|v| v.as_u64()),
+                                    message.get("timestamp").and_then(|v| v.as_u64()),
+                                ) {
+                                    self.party_manager.do_send(CursorPositionUpdate {
+                                        user_id: user.id,
+                                        position: position as usize,
+                                        party_code: party_code.clone(),
+                                        timestamp: last_update,
+                                    });
+                                }
                             }
                         }
                     },

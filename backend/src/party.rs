@@ -20,6 +20,9 @@ pub struct Party {
     #[serde(skip)]
     pub current_prompt_length: Option<usize>,
     pub member_colors: HashMap<String, String>,
+    pub session_wins: HashMap<Uuid, u32>,
+    pub cursor_positions: HashMap<Uuid, usize>,
+    pub last_position_update: HashMap<Uuid, u64>,
 }
 
 impl Party {
@@ -38,7 +41,10 @@ impl Party {
             sockets,
             finish_times: HashMap::new(),
             current_prompt_length: None,
-            member_colors
+            member_colors,
+            session_wins: HashMap::new(),
+            cursor_positions: HashMap::new(),
+            last_position_update: HashMap::new(),
         })
     }
 
@@ -72,6 +78,10 @@ impl Party {
             println!("{:?}", self.member_colors);
         }
 
+        if !self.session_wins.contains_key(&user_id) {
+            self.session_wins.insert(user_id, 0);
+        }
+
         Ok(())
     }
 
@@ -79,6 +89,7 @@ impl Party {
         self.members.retain(|member| member.id != user_id);
         self.sockets.remove(&user_id);
         self.member_colors.remove(&user_id.to_string());
+        self.session_wins.remove(&user_id);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -130,6 +141,14 @@ impl Party {
             }
         }
 
+        let all_users_finished = self.members.len() == self.finish_times.len();
+
+        // Only award the person with actual highest wpm
+        if all_users_finished && !leaderboard.is_empty() {
+            let winner_id = *leaderboard[0].0;
+            println!("Race complete! Winner: {}, awarding session win", winner_id);
+            *self.session_wins.entry(winner_id).or_insert(0) += 1;
+        }
 
         let update = LeaderboardUpdate {
             code: self.code.clone(),
@@ -139,8 +158,31 @@ impl Party {
         for socket in self.sockets.values() {
             let _ = socket.do_send(update.clone());
         }
+        self.cursor_positions.remove(&user_id);
+        self.last_position_update.remove(&user_id);
+        let members_colors = self.member_colors.clone();
+        let session_wins = self.session_wins.clone();
+        let update = PartyUpdate {
+            code: self.code.clone(),
+            party_members: self.members.clone(),
+            leader: self.leader,
+            member_colors: members_colors,
+            session_wins,
+        };
+        self.broadcast(update);
 
         Ok(())
+    }
+
+    pub fn broadcast_cursor_positions(&self) {
+        let positions = CursorPositions {
+            code: self.code.clone(),
+            positions: self.cursor_positions.clone(),
+        };
+
+        for socket in self.sockets.values() {
+            let _ = socket.do_send(positions.clone());
+        }
     }
 }
 
@@ -186,6 +228,7 @@ pub struct PartyUpdate {
     pub party_members: Vec<User>,
     pub leader: Uuid,
     pub member_colors: HashMap<String, String>,
+    pub session_wins: HashMap<Uuid, u32>,
 }
 
 #[derive(Message, Serialize, Clone)]
@@ -235,6 +278,43 @@ pub struct StatsUpdate {
     pub user: User,
 }
 
+#[derive(Message, Clone)]
+#[rtype(result = "()")]
+pub struct CursorPositionUpdate {
+    pub user_id: Uuid,
+    pub position: usize,
+    pub party_code: String,
+    pub timestamp: u64,
+}
+
+#[derive(Message, Serialize, Clone)]
+#[rtype(result = "()")]
+pub struct CursorPositions {
+    pub code: String,
+    pub positions: HashMap<Uuid, usize>,
+}
+
+impl Handler<CursorPositionUpdate> for PartyManager {
+    type Result = ();
+
+    fn handle(&mut self, msg: CursorPositionUpdate, _: &mut Self::Context) {
+        let mut store = PARTY_STORE.lock().unwrap();
+
+        if let Some(party) = store.get_mut(&msg.party_code) {
+            // Only update based on message timing
+            let should_update = match party.last_position_update.get(&msg.user_id) {
+                Some(last_time) => msg.timestamp > *last_time,
+                None => true,
+            };
+
+            if should_update {
+                party.cursor_positions.insert(msg.user_id, msg.position);
+                party.last_position_update.insert(msg.user_id, msg.timestamp);
+                party.broadcast_cursor_positions();
+            }
+        }
+    }
+}
 
 impl Handler<LeaveParty> for PartyManager {
     type Result = ();
@@ -244,6 +324,7 @@ impl Handler<LeaveParty> for PartyManager {
         if let Some(party) = store.get_mut(&msg.code) {
             party.remove_member(msg.user_id);
             let members_colors = party.member_colors.clone();
+            let session_wins = party.session_wins.clone();
             if party.is_empty() {
                 store.remove(&msg.code);
             } else {
@@ -255,6 +336,7 @@ impl Handler<LeaveParty> for PartyManager {
                     party_members: party.members.clone(),
                     leader: party.leader,
                     member_colors: members_colors,
+                    session_wins,
                 };
                 party.broadcast(update);
             }
@@ -277,6 +359,7 @@ impl Handler<CreateParty> for PartyManager {
                     let leader = party.leader;
                     let members_clone = party.members.clone();
                     let members_colors = party.member_colors.clone();
+                    let session_wins = party.session_wins.clone();
                     let mut store = PARTY_STORE.lock().unwrap();
                     store.insert(code.clone(), party);
 
@@ -285,6 +368,7 @@ impl Handler<CreateParty> for PartyManager {
                         party_members: members_clone,
                         leader,
                         member_colors: members_colors,
+                        session_wins,
                     };
 
                     socket_clone.do_send(update.clone());
@@ -319,14 +403,20 @@ impl Handler<JoinParty> for PartyManager {
                 if !party.member_colors.contains_key(&user_id.to_string()) {
                     party.member_colors.insert(user_id.to_string(), Party::generate_random_color());
                 }
+                if !party.session_wins.contains_key(&user_id) {
+                    party.session_wins.insert(user_id, 0);
+                }
+
                 match party.add_member(user_id, msg.socket, &db_pool).await {
                     Ok(_) => {
                         let members_colors = party.member_colors.clone();
+                        let session_wins = party.session_wins.clone();
                         let update = PartyUpdate {
                             code: code.clone(),
                             party_members: party.members.clone(),
                             leader: party.leader,
                             member_colors: members_colors,
+                            session_wins,
                         };
 
                         party.broadcast(update);
@@ -339,16 +429,18 @@ impl Handler<JoinParty> for PartyManager {
                 match Party::new(user_id, msg.socket, &db_pool).await {
                     Ok(mut new_party) => {
                         new_party.code = code.clone();
-
+                        new_party.session_wins.insert(user_id, 0);
                         store.insert(code.clone(), new_party);
 
                         if let Some(party) = store.get(&code) {
                             let members_colors = party.member_colors.clone();
+                            let session_wins = party.session_wins.clone();
                             let update = PartyUpdate {
                                 code: code.clone(),
                                 party_members: party.members.clone(),
                                 leader: user_id,
                                 member_colors: members_colors,
+                                session_wins,
                             };
 
                             socket_clone.do_send(update.clone());
@@ -479,12 +571,24 @@ impl Handler<ResetRace> for PartyManager {
         let mut store = PARTY_STORE.lock().unwrap();
         if let Some(party) = store.get_mut(&msg.code) {
             party.finish_times.clear();
-
+            party.cursor_positions.clear();
+            party.last_position_update.clear();
             let reset = ResetRace {
                 code: msg.code.clone(),
             };
 
             party.broadcast_reset_race(reset);
+
+            let members_colors = party.member_colors.clone();
+            let session_wins = party.session_wins.clone();
+            let update = PartyUpdate {
+                code: msg.code.clone(),
+                party_members: party.members.clone(),
+                leader: party.leader,
+                member_colors: members_colors,
+                session_wins,
+            };
+            party.broadcast(update);
         }
     }
 }

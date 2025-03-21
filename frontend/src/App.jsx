@@ -9,6 +9,7 @@ import {UserProvider} from "./components/UserContext.jsx";
 import {PartyProvider} from "./components/PartyContext.jsx";
 import HomePage from "./components/HomePage.jsx";
 import PartyPage from "./components/PartyPage.jsx";
+import GlobalLeaderboard from "./components/GlobalLeaderboard.jsx";
 
 function App() {
     return (
@@ -17,10 +18,13 @@ function App() {
                 <UserProvider>
                     <PartyProvider>
                         <RaceProvider>
-                            <Routes>
-                                <Route path="/" element={<HomePage />} />
-                                <Route path="/party" element={<PartyPage />} />
-                            </Routes>
+                            <div className="main-content">
+                                <Routes>
+                                    <Route path="/" element={<HomePage />} />
+                                    <Route path="/party" element={<PartyPage />} />
+                                </Routes>
+                                <GlobalLeaderboard />
+                            </div>
                             <Footer />
                         </RaceProvider>
                     </PartyProvider>

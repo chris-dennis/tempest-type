@@ -21,6 +21,7 @@ function PartyManager() {
         createParty,
         joinParty,
         getMemberColor,
+        getMemberSessionWins,
         leader
     } = useContext(PartyContext);
 
@@ -53,6 +54,19 @@ function PartyManager() {
         } else {
             setMessage('Only the party leader can reset the race');
         }
+    };
+
+    const renderSessionWins = (memberId) => {
+        const wins = getMemberSessionWins(memberId);
+        if (wins > 0) {
+            return (
+                <span className="session-wins">
+                    <span className="gold-star">⭐</span>
+                    {wins}
+                </span>
+            );
+        }
+        return null;
     };
 
     return (
@@ -113,6 +127,7 @@ function PartyManager() {
                                                     {member.nickname || 'Anonymous'}
                                                     {member.id === user?.id ? ' (You)' : ''}
                                                     {member.id === leader ? ' 👑' : ''}
+                                                    {renderSessionWins(member.id)}
                                                 </div>
                                             ) : null
                                         ))

@@ -3,7 +3,6 @@ import {UserContext} from './UserContext';
 import {WebSocketContext} from './WebSocketContext';
 import {RaceContext} from './RaceContext';
 import {PartyContext} from './PartyContext';
-import Typewriter from 'typewriter-effect/dist/core';
 import UserStats from './UserStats';
 
 function RaceBox() {
@@ -13,54 +12,23 @@ function RaceBox() {
     const [endTime, setEndTime] = useState(null);
     const [currentWPM, setCurrentWPM] = useState(0);
     const inputRef = useRef(null);
+    const promptRef = useRef(null);
+    const [charRects, setCharRects] = useState([]);
 
     const { user } = useContext(UserContext);
     const { isConnected } = useContext(WebSocketContext);
-    const { setRaceOver } = useContext(PartyContext);
+    const { setRaceOver, partyMembers, getMemberColor } = useContext(PartyContext);
     const {
         raceStarted,
         countdown,
         racePrompt,
-        finishRace
+        finishRace,
+        updateCursorPosition,
+        cursorPositions
     } = useContext(RaceContext);
     const hasSentFinish = useRef(false);
 
-    useEffect(() => {
-        if (isConnected) {
-            document.getElementById('typewriter').style.color = `#${Math.floor(Math.random() * 16777215).toString(16)}`;
 
-            const typewriter = new Typewriter('#typewriter', {
-                loop: false,
-                cursor: ''
-            });
-
-            typewriter
-                .typeString('Tempest Type')
-                .callFunction(() => {
-                    const typewriterEl = document.getElementById('typewriter');
-                    if (typewriterEl) {
-                        const wrapper = document.createElement('span');
-                        wrapper.style.display = 'inline-flex';
-                        wrapper.style.alignItems = 'center';
-                        wrapper.style.gap = '8px';
-
-                        const img = document.createElement('img');
-                        img.src = '/wind.svg';
-                        img.alt = 'Wind Icon';
-                        img.style.width = '64px';
-                        img.style.height = '64px';
-                        img.style.verticalAlign = 'middle';
-                        img.style.marginLeft = '32px';
-
-                        wrapper.innerHTML = 'Tempest Type';
-                        wrapper.appendChild(img);
-                        typewriterEl.innerHTML = '';
-                        typewriterEl.appendChild(wrapper);
-                    }
-                })
-                .start();
-        }
-    }, [isConnected]);
 
 
     useEffect(() => {
@@ -71,6 +39,7 @@ function RaceBox() {
             setEndTime(null);
             setCurrentWPM(0);
             hasSentFinish.current = false;
+            setCharRects([]);
         }
     }, [raceStarted]);
 
@@ -106,11 +75,13 @@ function RaceBox() {
     const handleInputChange = (e) => {
         if (endTime) return;
 
-        setUserInput(e.target.value);
+        const newInput = e.target.value;
+        setUserInput(newInput);
+        updateCursorPosition(newInput.length);
 
-        if (firstMistakeIndex === -1 && e.target.value !== racePrompt.slice(0, e.target.value.length)) {
-            for (let i = 0; i < e.target.value.length; i++) {
-                if (e.target.value[i] !== racePrompt[i]) {
+        if (firstMistakeIndex === -1 && newInput !== racePrompt.slice(0, newInput.length)) {
+            for (let i = 0; i < newInput.length; i++) {
+                if (newInput[i] !== racePrompt[i]) {
                     setFirstMistakeIndex(i);
                     break;
                 }
@@ -118,16 +89,98 @@ function RaceBox() {
         }
     };
 
+    // Update character positions after rendering
+    useEffect(() => {
+        if (raceStarted && promptRef.current && racePrompt) {
+            const timer = setTimeout(() => {
+                const spans = promptRef.current.querySelectorAll('span');
+                const newCharRects = [];
+
+                spans.forEach((span, index) => {
+                    const rect = span.getBoundingClientRect();
+                    const promptRect = promptRef.current.getBoundingClientRect();
+
+                    newCharRects[index] = {
+                        left: rect.left - promptRect.left,
+                        top: rect.top - promptRect.top,
+                        width: rect.width,
+                        height: rect.height
+                    };
+                });
+
+                setCharRects(newCharRects);
+            }, 50);
+
+            return () => clearTimeout(timer);
+        }
+    }, [racePrompt, raceStarted, countdown]);
+
+    // For showing other users cursors
+    const createCursorElement = (userId, position) => {
+        const memberColor = getMemberColor(userId);
+        const isCurrentUser = user && userId === user.id;
+
+        const memberInfo = partyMembers.find(member => member.id === userId);
+        const memberName = memberInfo ? memberInfo.nickname || 'Anonymous' : 'Unknown';
+
+        if (isCurrentUser) return null;
+
+        if (!charRects.length || position >= charRects.length) {
+            return null;
+        }
+
+        const charPos = charRects[position] || charRects[charRects.length - 1];
+        if (!charPos) return null;
+
+        return (
+            <div
+                key={userId}
+                className="user-cursor"
+                style={{
+                    position: 'absolute',
+                    left: `${charPos.left}px`,
+                    top: `${charPos.top}px`,
+                    background: memberColor,
+                    width: '2px',
+                    height: '20px',
+                    animation: 'blink 1s step-end infinite',
+                    zIndex: 100,
+                    marginTop: '4px',
+                }}
+                title={`${memberName}'s cursor`}
+            >
+                <div
+                    className="cursor-name"
+                    style={{
+                        position: 'absolute',
+                        top: '-20px',
+                        left: '-10px',
+                        fontSize: '10px',
+                        color: 'black',
+                        backgroundColor: memberColor,
+                        fontWeight: 'bold',
+                        whiteSpace: 'nowrap',
+                        padding: '1px 3px',
+                        borderRadius: '3px',
+                        opacity: 0.5
+                    }}
+                >
+                    {memberName}
+                </div>
+            </div>
+        );
+    };
+
     const renderHighlightedText = () => {
         const chars = [];
-        let firstMistakeIndex = -1;
+        let localFirstMistakeIndex = -1;
         let highlight = false;
 
         for (let i = 0; i < racePrompt.length; i++) {
             if (i < userInput.length) {
-                if (userInput[i] !== racePrompt[i] && firstMistakeIndex === -1) {
+                if (userInput[i] !== racePrompt[i] && localFirstMistakeIndex === -1) {
                     highlight = true;
-                    firstMistakeIndex = i;
+                    localFirstMistakeIndex = i;
                 }
 
                 chars.push(
@@ -136,7 +189,7 @@ function RaceBox() {
                         style={{
                             background: highlight ? "red" : "lightgreen",
                             color: highlight ? "white" : "black",
-                            textDecoration: i === firstMistakeIndex ? "underline" : "none",
+                            textDecoration: i === localFirstMistakeIndex ? "underline" : "none",
                         }}
                     >
                         {racePrompt[i]}
@@ -152,7 +205,6 @@ function RaceBox() {
 
     return (
         <>
-            <a href="/"><div className="typewriter" id="typewriter"></div></a>
             {isConnected ? (
                 <div className="top">
                     {user && <UserStats />}
@@ -161,9 +213,21 @@ function RaceBox() {
                         <div id="countdown">
                             {raceStarted && countdown > 0 && <h2>{countdown}</h2>}
                         </div>
-                        <div className="prompt">
-                            {raceStarted ? renderHighlightedText() :
-                                <div style={{textAlign: "center"}}>Waiting for Prompt...</div>}
+                        <div className="prompt-container">
+                            <div
+                                className="prompt"
+                                ref={promptRef}
+                                style={{ position: 'relative' }}
+                            >
+                                {raceStarted ? renderHighlightedText() :
+                                    <div style={{textAlign: "center"}}>Waiting for Prompt...</div>}
+
+                                {/* Render other users' cursors */}
+                                {raceStarted && countdown === 0 && charRects.length > 0 &&
+                                    Object.entries(cursorPositions).map(([userId, position]) => {
+                                        return createCursorElement(userId, position);
+                                    })}
+                            </div>
                         </div>
                         <input
                             type="text"

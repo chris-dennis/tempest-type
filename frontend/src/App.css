@@ -63,7 +63,16 @@ ul {
 .prompt {
   text-align: start;
   font-size: 20px;
-  min-height: 150px;
+  min-height: 190px;
+  position: relative;
+  line-height: 2;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.prompt span {
+  display: inline;
+  position: relative;
 }
 
 #countdown {
@@ -325,3 +334,18 @@ ul {
 .leaderboard-table tr:nth-child(3) td {
   background-color: rgba(205, 127, 50, 0.2); /* Bronze */
 }
+
+.session-wins {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  font-weight: bold;
+}
+.gold-star {
+  color: gold;
+  margin-right: 2px;
+}
+.main-content {
+  margin-bottom: 60px;
+}
+

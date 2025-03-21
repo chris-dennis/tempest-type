@@ -137,6 +137,7 @@ impl User {
                     party_members: party.members.clone(),
                     leader: party.leader,
                     member_colors: party.member_colors.clone(),
+                    session_wins: party.session_wins.clone(),
                 };
                 party.broadcast(update);
             }

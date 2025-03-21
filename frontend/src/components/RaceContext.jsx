@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { WebSocketContext } from './WebSocketContext';
 import { UserContext } from './UserContext';
 import { PartyContext } from './PartyContext';
@@ -9,6 +9,10 @@ const RaceProvider = ({ children }) => {
     const [raceStarted, setRaceStarted] = useState(false);
     const [countdown, setCountdown] = useState(5);
     const [racePrompt, setRacePrompt] = useState('');
+    const [cursorPositions, setCursorPositions] = useState({});
+    const lastPositionUpdate = useRef(0);
+    const lastSentPosition = useRef(0);
+    const positionUpdateInterval = useRef(null);
 
     const { isConnected, sendMessage, registerMessageHandler } = useContext(WebSocketContext);
     const { user } = useContext(UserContext);
@@ -33,7 +37,15 @@ const RaceProvider = ({ children }) => {
         setRaceStarted(false);
         setCountdown(5);
         setRacePrompt('');
+        setCursorPositions({});
         setRaceOver(false);
+
+        // Clear the position update interval
+        if (positionUpdateInterval.current) {
+            clearInterval(positionUpdateInterval.current);
+            positionUpdateInterval.current = null;
+        }
+        lastSentPosition.current = 0;
     }, [setRaceOver]);
 
     // Reset race for everyone (leader only)
@@ -51,6 +63,7 @@ const RaceProvider = ({ children }) => {
     // Start the race based on server message
     const startRace = useCallback(() => {
         setRaceStarted(true);
+        setCursorPositions({});
     }, []);
 
     // Submit race completion results
@@ -63,7 +76,63 @@ const RaceProvider = ({ children }) => {
             wpm: wpm,
             user: user,
         });
+
+        // Clear the position update interval
+        if (positionUpdateInterval.current) {
+            clearInterval(positionUpdateInterval.current);
+            positionUpdateInterval.current = null;
+        }
     }, [user, partyCode, sendMessage]);
+
+    // Send cursor position update to server
+    const updateCursorPosition = useCallback((position) => {
+        if (!user || !partyCode || !raceStarted || countdown > 0) return;
+
+        if (position !== lastSentPosition.current) {
+            const now = Date.now();
+            lastPositionUpdate.current = now;
+            lastSentPosition.current = position;
+
+            sendMessage({
+                type: 'positionUpdate',
+                position: position,
+                party_code: partyCode,
+                timestamp: now
+            });
+        }
+    }, [user, partyCode, raceStarted, countdown, sendMessage]);
+
+    // Cursor position updates
+    useEffect(() => {
+        if (raceStarted && countdown === 0 && user && partyCode) {
+            if (positionUpdateInterval.current) {
+                clearInterval(positionUpdateInterval.current);
+            }
+
+            // updates every 500ms if there's a change
+            positionUpdateInterval.current = setInterval(() => {
+                if (lastSentPosition.current > 0) {
+                    const now = Date.now();
+                    if (now - lastPositionUpdate.current > 500) {
+                        sendMessage({
+                            type: 'positionUpdate',
+                            position: lastSentPosition.current,
+                            party_code: partyCode,
+                            timestamp: now
+                        });
+                        lastPositionUpdate.current = now;
+                    }
+                }
+            }, 500);
+
+            return () => {
+                if (positionUpdateInterval.current) {
+                    clearInterval(positionUpdateInterval.current);
+                    positionUpdateInterval.current = null;
+                }
+            };
+        }
+    }, [raceStarted, countdown, user, partyCode, sendMessage]);
 
     // Register message handlers for race events
     useEffect(() => {
@@ -84,9 +153,16 @@ const RaceProvider = ({ children }) => {
             setMessage('Race has been reset.');
         });
 
+        // cursor position updates
+        const unregisterCursorPositions = registerMessageHandler('cursorPositions', (message) => {
+            console.log('Cursor positions update:', message.positions);
+            setCursorPositions(message.positions);
+        });
+
         return () => {
             unregisterStartRace();
             unregisterResetRace();
+            unregisterCursorPositions();
         };
     }, [isConnected, registerMessageHandler, startRace, resetRace, setMessage]);
 
@@ -115,7 +191,9 @@ const RaceProvider = ({ children }) => {
             resetRace,
             initiateRace,
             resetPartyRace,
-            finishRace
+            finishRace,
+            updateCursorPosition,
+            cursorPositions
         }}>
             {children}
         </RaceContext.Provider>
