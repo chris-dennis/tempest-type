@@ -70,7 +70,7 @@ const RaceProvider = ({ children }) => {
     const finishRace = useCallback((promptLength, timeTakenMs) => {
         if (!user || !partyCode) return;
 
-        // Calculate WPM clientside only for display - server calculates actual result
+        // Calculate WPM clientside only for display  server calculates actual result
         const chars = promptLength;
         const minutes = timeTakenMs / 60000;
         const wpm = (chars / 5) / minutes;
