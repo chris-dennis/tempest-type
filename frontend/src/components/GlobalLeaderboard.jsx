@@ -4,7 +4,7 @@ function GlobalLeaderboard() {
     const [raceResults, setRaceResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [isCollapsed, setIsCollapsed] = useState(true);
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'wpm', direction: 'desc' });
     const [filterName, setFilterName] = useState('');
     const [currentPage, setCurrentPage] = useState(1);

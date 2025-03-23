@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use rand::seq::SliceRandom;
 use uuid::Uuid;
 use actix_web::web;
-use crate::{get_or_create_user, MyWebSocket, RawMessage};
+use crate::{MyWebSocket, RawMessage};
 use crate::user::User;
 use crate::quotes::Quotes;
 use crate::database::DbPool;
@@ -16,7 +16,7 @@ pub struct Party {
     pub members: Vec<User>,
     #[serde(skip)]
     pub sockets: HashMap<Uuid, Addr<MyWebSocket>>,
-    pub finish_times: HashMap<Uuid, u64>,
+    pub finish_times: HashMap<Uuid, f32>,
     #[serde(skip)]
     pub current_prompt_length: Option<usize>,
     pub member_colors: HashMap<String, String>,
@@ -68,21 +68,27 @@ impl Party {
         format!("#{:02X}{:02X}{:02X}", r, g, b)
     }
 
-    pub async fn add_member(&mut self, user_id: Uuid, socket: Addr<MyWebSocket>, db_pool: &web::Data<DbPool>) -> Result<(), sqlx::Error> {
+    pub fn has_member(&self, user_id: &Uuid) -> bool {
+        self.members.iter().any(|member| member.id == *user_id)
+    }
+    pub async fn add_member(&mut self, user_id: Uuid, socket: Addr<MyWebSocket>, db_pool: &web::Data<DbPool>) -> Result<Result<(), String>, sqlx::Error> {
+        if self.has_member(&user_id) {
+            return Ok(Err("You are already in this party".to_string()));
+        }
+
         let user = User::get_by_id(user_id, db_pool).await?;
         self.members.push(user);
         self.sockets.insert(user_id, socket);
 
         if !self.member_colors.contains_key(&user_id.to_string()) {
             self.member_colors.insert(user_id.to_string(), Self::generate_random_color());
-            println!("{:?}", self.member_colors);
         }
 
         if !self.session_wins.contains_key(&user_id) {
             self.session_wins.insert(user_id, 0);
         }
 
-        Ok(())
+        Ok(Ok(()))
     }
 
     pub fn remove_member(&mut self, user_id: Uuid) {
@@ -121,22 +127,28 @@ impl Party {
         }
     }
 
-    pub async fn broadcast_finish_race(&mut self, user_id: Uuid, wpm: f64, db_pool: &web::Data<DbPool>) -> Result<(), sqlx::Error> {
-        self.finish_times.insert(user_id, wpm as u64);
+    pub async fn broadcast_finish_race(&mut self, user_id: Uuid, prompt_length: usize, time_taken_ms: u64, db_pool: &web::Data<DbPool>) -> Result<(), sqlx::Error> {
+        let chars = prompt_length as f32;
+        let minutes = time_taken_ms as f32 / 60000.0;
+        let wpm = (chars / 5.0) / minutes;
+
+        self.finish_times.insert(user_id, wpm);
 
         let mut leaderboard: Vec<_> = self.finish_times.iter().collect();
-        leaderboard.sort_by_key(|&(_, &time)| std::cmp::Reverse(time));
+        leaderboard.sort_by(|&(_, &a), &(_, &b)| {
+            b.partial_cmp(&a).unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut leaderboard_entries = Vec::new();
         for (&id, &wpm_score) in leaderboard.iter() {
             match User::get_by_id(id, db_pool).await {
                 Ok(user) => leaderboard_entries.push(LeaderboardEntry {
                     user: Some(user),
-                    wpm: wpm_score as f64,
+                    wpm: wpm_score,
                 }),
                 Err(_) => leaderboard_entries.push(LeaderboardEntry {
                     user: None,
-                    wpm: wpm_score as f64,
+                    wpm: wpm_score,
                 }),
             }
         }
@@ -233,6 +245,13 @@ pub struct PartyUpdate {
 
 #[derive(Message, Serialize, Clone)]
 #[rtype(result = "()")]
+pub struct PartyError {
+    pub error: String,
+    pub code: Option<String>,
+}
+
+#[derive(Message, Serialize, Clone)]
+#[rtype(result = "()")]
 pub struct StartRace {
     pub code: String,
     pub prompt: String,
@@ -242,7 +261,8 @@ pub struct StartRace {
 #[rtype(result = "()")]
 pub struct FinishRace {
     pub user_id: Uuid,
-    pub wpm: f64,
+    pub prompt_length: usize,
+    pub time_taken_ms: u64,
     pub code: String,
 }
 
@@ -262,7 +282,7 @@ pub struct LeaderboardUpdate {
 #[derive(Serialize, Clone)]
 pub struct LeaderboardEntry {
     pub user: Option<User>,
-    pub wpm: f64,
+    pub wpm: f32,
 }
 
 #[derive(Message, Clone)]
@@ -408,7 +428,7 @@ impl Handler<JoinParty> for PartyManager {
                 }
 
                 match party.add_member(user_id, msg.socket, &db_pool).await {
-                    Ok(_) => {
+                    Ok(Ok(())) => {
                         let members_colors = party.member_colors.clone();
                         let session_wins = party.session_wins.clone();
                         let update = PartyUpdate {
@@ -421,8 +441,18 @@ impl Handler<JoinParty> for PartyManager {
 
                         party.broadcast(update);
                     },
+                    Ok(Err(error_msg)) => {
+                        socket_clone.do_send(PartyError {
+                            error: error_msg,
+                            code: Some(code.clone()),
+                        });
+                    },
                     Err(e) => {
                         eprintln!("Error adding member to party: {:?}", e);
+                        socket_clone.do_send(PartyError {
+                            error: "Server error occurred".to_string(),
+                            code: Some(code.clone()),
+                        });
                     }
                 }
             } else {
@@ -479,19 +509,25 @@ impl Handler<FinishRace> for PartyManager {
     fn handle(&mut self, msg: FinishRace, _: &mut Self::Context) {
         let db_pool = self.db_pool.clone();
         let user_id = msg.user_id;
-        let wpm = msg.wpm;
+        let prompt_length = msg.prompt_length;
+        let time_taken_ms = msg.time_taken_ms;
         let party_code = msg.code.clone();
 
         let future = async move {
             let mut store = PARTY_STORE.lock().unwrap();
 
             if let Some(party) = store.get_mut(&party_code) {
-                if let Err(e) = party.broadcast_finish_race(user_id, wpm, &db_pool).await {
+                if let Err(e) = party.broadcast_finish_race(user_id, prompt_length, time_taken_ms, &db_pool).await {
                     eprintln!("Error in broadcast_finish_race: {:?}", e);
                 }
 
+                // Calculate WPM for storage
+                let chars = prompt_length as f64;
+                let minutes = time_taken_ms as f64 / 60000.0;
+                let wpm = (chars / 5.0) / minutes;
+
                 // Store race result in the database
-                if let Err(e) = store_race_result(user_id, &party_code, wpm, &db_pool).await {
+                if let Err(e) = store_race_result(user_id, &party_code, wpm as f64, prompt_length, time_taken_ms, &db_pool).await {
                     eprintln!("Error storing race result: {:?}", e);
                 }
 
@@ -544,19 +580,21 @@ impl Handler<FinishRace> for PartyManager {
     }
 }
 
-async fn store_race_result(user_id: Uuid, party_code: &str, wpm: f64, db_pool: &web::Data<DbPool>) -> Result<(), sqlx::Error> {
+async fn store_race_result(user_id: Uuid, party_code: &str, wpm: f64, prompt_length: usize, time_taken_ms: u64, db_pool: &web::Data<DbPool>) -> Result<(), sqlx::Error> {
     let finish_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 
     sqlx::query!(
-        "INSERT INTO race_results (party_code, user_id, wpm, finish_time)
-         VALUES ($1, $2, $3, $4)",
+        "INSERT INTO race_results (party_code, user_id, wpm, finish_time, prompt_length, time_taken_ms)
+         VALUES ($1, $2, $3, $4, $5, $6)",
         party_code,
         user_id,
-        wpm as f32,
-        finish_time
+        wpm,
+        finish_time,
+        prompt_length as i32,
+        time_taken_ms as i64
     )
         .execute(db_pool.get_ref())
         .await?;

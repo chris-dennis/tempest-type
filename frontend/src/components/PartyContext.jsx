@@ -207,6 +207,12 @@ const PartyProvider = ({ children }) => {
         const unregisterError = registerMessageHandler('error', (message) => {
             setMessage(message.message || 'An error occurred');
             setIsLoading(false);
+
+            if (message.message && message.message.includes("already in this party")) {
+                initialPartyJoinAttempted.current = false;
+                partyCreatedOrJoined.current = false;
+                navigate('/');
+            }
         });
 
         return () => {

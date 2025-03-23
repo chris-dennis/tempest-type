@@ -67,13 +67,19 @@ const RaceProvider = ({ children }) => {
     }, []);
 
     // Submit race completion results
-    const finishRace = useCallback((wpm) => {
+    const finishRace = useCallback((promptLength, timeTakenMs) => {
         if (!user || !partyCode) return;
 
-        console.log(`Race finished with ${wpm} WPM, sending to server`);
+        // Calculate WPM clientside only for display - server calculates actual result
+        const chars = promptLength;
+        const minutes = timeTakenMs / 60000;
+        const wpm = (chars / 5) / minutes;
+
+        console.log(`Race finished: ${chars} chars in ${timeTakenMs}ms = ${wpm.toFixed(2)} WPM, sending to server`);
         sendMessage({
             type: 'finishRace',
-            wpm: wpm,
+            promptLength: chars,
+            timeTakenMs: timeTakenMs,
             user: user,
         });
 
@@ -82,6 +88,8 @@ const RaceProvider = ({ children }) => {
             clearInterval(positionUpdateInterval.current);
             positionUpdateInterval.current = null;
         }
+
+        return wpm;
     }, [user, partyCode, sendMessage]);
 
     // Send cursor position update to server

@@ -162,7 +162,6 @@ function PartyManager() {
                                             <h3>Winners:</h3>
                                             {leaderboard
                                                 .slice()
-                                                .sort((a, b) => b.wpm - a.wpm)
                                                 .map((entry, index) => (
                                                     <li key={index}>
                                                         {entry.user?.nickname || 'Anonymous'}: {entry.wpm.toFixed(1)} WPM

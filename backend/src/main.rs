@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use ws::Message;
 
 use crate::user::User;
-use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace, StatsUpdate, CursorPositionUpdate, CursorPositions};
+use crate::party::{PartyManager, CreateParty, JoinParty, PartyUpdate, StartRace, FinishRace, LeaderboardUpdate, LeaveParty, ResetRace, StatsUpdate, CursorPositionUpdate, CursorPositions, PartyError};
 use crate::database::DbPool;
 
 struct MyWebSocket {
@@ -85,6 +85,20 @@ impl Handler<PartyUpdate> for MyWebSocket {
         });
 
         ctx.text(update.to_string());
+    }
+}
+
+impl Handler<PartyError> for MyWebSocket {
+    type Result = ();
+
+    fn handle(&mut self, msg: PartyError, ctx: &mut Self::Context) {
+        let error = serde_json::json!({
+            "type": "error",
+            "message": msg.error,
+            "code": msg.code
+        });
+
+        ctx.text(error.to_string());
     }
 }
 
@@ -274,15 +288,19 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebSocket {
                         println!("Race completed");
                         if let Some(user) = &self.user {
                             if let Some(party_code) = &self.party_code {
-                                if let Some(wpm) = message.get("wpm").and_then(|v| v.as_f64()) {
+                                let prompt_length = message.get("promptLength").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                let time_taken_ms = message.get("timeTakenMs").and_then(|v| v.as_u64()).unwrap_or(0);
+
+                                if prompt_length > 0 && time_taken_ms > 0 {
                                     self.party_manager.do_send(FinishRace {
                                         user_id: user.id,
-                                        wpm,
+                                        prompt_length,
+                                        time_taken_ms,
                                         code: party_code.clone(),
                                     });
-                                    println!("Sent race leaderboard update")
+                                    println!("Sent race leaderboard update");
                                 } else {
-                                    println!("Failed to get finish time");
+                                    println!("Failed to get valid time or prompt length");
                                 }
                             }
                         }

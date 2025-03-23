@@ -53,12 +53,14 @@ function RaceBox() {
 
     useEffect(() => {
         if (endTime && startTime && user && racePrompt && !hasSentFinish.current) {
-            const timeTaken = (endTime - startTime) / 60000;
-            const wordsTyped = racePrompt.split(' ').length;
-            const wpm = wordsTyped / timeTaken;
+            const timeTakenMs = endTime - startTime;
+            const promptLength = racePrompt.length;
+
+            const minutes = timeTakenMs / 60000;
+            const wpm = (promptLength / 5) / minutes;
 
             setCurrentWPM(wpm);
-            finishRace(wpm);
+            finishRace(promptLength, timeTakenMs);
             hasSentFinish.current = true;
         }
     }, [endTime, startTime, user, racePrompt, finishRace]);
@@ -205,6 +207,7 @@ function RaceBox() {
                     <div className="prompt-box">
                         <div id="countdown">
                             {raceStarted && countdown > 0 && <h2>{countdown}</h2>}
+                            {endTime && <p>Your WPM: {currentWPM.toFixed(1)}</p>}
                         </div>
                         <div className="prompt-container">
                             <div
@@ -245,7 +248,6 @@ function RaceBox() {
                             }}
                         />
                     </div>
-                    {endTime && <p>Your WPM: {currentWPM.toFixed(2).replace(".00", "")}</p>}
                 </div>
             ) : (
                 <h1></h1>
