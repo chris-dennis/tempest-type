@@ -24,6 +24,8 @@ Live Cursor Positions: See where other players are in the typing prompt in real-
 
 ## Tech Stack
 
+WebSockets for fast communications between clients
+
 
 ### Backend
 
@@ -45,7 +47,6 @@ React Router for navigation
 Context API for state management
 
 
-Websockets for fast and instant communication between clients
 
 
 ## Getting Started
