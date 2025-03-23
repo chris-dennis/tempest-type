@@ -14,6 +14,7 @@ const PartyProvider = ({ children }) => {
     const [message, setMessage] = useState('');
     const [searchParams] = useSearchParams();
     const [isLoading, setIsLoading] = useState(false);
+    const [showOtherCursors, setShowOtherCursors] = useState(true);
     const [leader, setLeader] = useState(null);
     const initialPartyJoinAttempted = useRef(false);
     const partyCreatedOrJoined = useRef(false);
@@ -247,7 +248,9 @@ const PartyProvider = ({ children }) => {
             getMemberColor,
             getMemberById,
             getMemberSessionWins,
-            leader
+            leader,
+            showOtherCursors,
+            setShowOtherCursors,
         }}>
             {children}
         </PartyContext.Provider>

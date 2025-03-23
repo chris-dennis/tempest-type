@@ -22,7 +22,9 @@ function PartyManager() {
         joinParty,
         getMemberColor,
         getMemberSessionWins,
-        leader
+        leader,
+        showOtherCursors,
+        setShowOtherCursors
     } = useContext(PartyContext);
 
     const {
@@ -67,6 +69,10 @@ function PartyManager() {
             );
         }
         return null;
+    };
+
+    const handleToggleCursors = (e) => {
+        setShowOtherCursors(e.target.checked);
     };
 
     return (
@@ -134,6 +140,17 @@ function PartyManager() {
                                     ) : (
                                         <div>Waiting for players to join...</div>
                                     )}
+                                </div>
+
+                                <div className="cursor-option">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={showOtherCursors}
+                                            onChange={handleToggleCursors}
+                                        />
+                                        Show other users progress
+                                    </label>
                                 </div>
                             </div>
 

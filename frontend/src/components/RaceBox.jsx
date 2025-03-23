@@ -3,6 +3,7 @@ import {UserContext} from './UserContext';
 import {WebSocketContext} from './WebSocketContext';
 import {RaceContext} from './RaceContext';
 import {PartyContext} from './PartyContext';
+import {SettingsContext} from './SettingsContext';
 import UserStats from './UserStats';
 
 function RaceBox() {
@@ -17,19 +18,10 @@ function RaceBox() {
 
     const { user } = useContext(UserContext);
     const { isConnected } = useContext(WebSocketContext);
-    const { setRaceOver, partyMembers, getMemberColor } = useContext(PartyContext);
-    const {
-        raceStarted,
-        countdown,
-        racePrompt,
-        finishRace,
-        updateCursorPosition,
-        cursorPositions
-    } = useContext(RaceContext);
+    const { setRaceOver, partyMembers, getMemberColor, showOtherCursors } = useContext(PartyContext);
+    const { settings } = useContext(SettingsContext);
+    const {raceStarted, countdown, racePrompt, finishRace, updateCursorPosition, cursorPositions} = useContext(RaceContext);
     const hasSentFinish = useRef(false);
-
-
-
 
     useEffect(() => {
         if (!raceStarted) {
@@ -58,7 +50,6 @@ function RaceBox() {
             setRaceOver(true);
         }
     }, [userInput, racePrompt, setRaceOver]);
-
 
     useEffect(() => {
         if (endTime && startTime && user && racePrompt && !hasSentFinish.current) {
@@ -187,9 +178,11 @@ function RaceBox() {
                     <span
                         key={i}
                         style={{
-                            background: highlight ? "red" : "lightgreen",
-                            color: highlight ? "white" : "black",
-                            textDecoration: i === localFirstMistakeIndex ? "underline" : "none",
+                            background: settings?.highlightEnabled
+                                ? (highlight ? settings.errorHighlightColor : settings.correctHighlightColor)
+                                : 'transparent',
+                            color: settings?.promptColor,
+                            textDecoration: i === localFirstMistakeIndex && settings?.highlightEnabled ? "underline" : "none",
                         }}
                     >
                         {racePrompt[i]}
@@ -217,13 +210,17 @@ function RaceBox() {
                             <div
                                 className="prompt"
                                 ref={promptRef}
-                                style={{ position: 'relative' }}
+                                style={{
+                                    position: 'relative',
+                                    fontFamily: settings?.promptFontFamily,
+                                    color: settings?.promptColor
+                                }}
                             >
                                 {raceStarted ? renderHighlightedText() :
                                     <div style={{textAlign: "center"}}>Waiting for Prompt...</div>}
 
                                 {/* Render other users' cursors */}
-                                {raceStarted && countdown === 0 && charRects.length > 0 &&
+                                {raceStarted && countdown === 0 && charRects.length > 0 && showOtherCursors &&
                                     Object.entries(cursorPositions).map(([userId, position]) => {
                                         return createCursorElement(userId, position);
                                     })}
