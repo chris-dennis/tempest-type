@@ -30,8 +30,6 @@ Live Cursor Positions: See where other players are in the typing prompt in real-
 
 Rust with Actix-web framework
 
-WebSockets for real-time communication
-
 PostgreSQL database for data persistence
 
 SQLx for database interactions
@@ -46,8 +44,8 @@ React Router for navigation
 
 Context API for state management
 
-WebSockets for real-time updates
 
+Websockets for fast and instant communication between clients
 
 
 ## Getting Started
